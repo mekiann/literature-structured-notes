@@ -55,6 +55,19 @@
 - conclusion: A starch-based hydrogel can release a model dye in a controlled way, with release speed set by crosslinker dose; the method is cheap and simple; wider use needs tests on other molecules and over longer times.
 - method / result / link to next: NOT_REPORTED (final section).
 
+## Figure / table register (v1.1)
+
+- **Figure 1** (Introduction, s2.p1) — value from the citing text:
+  "the release setup used in all later tests". Status: verified.
+- **Figure 2** (Results, s4.p1) — value from the citing text: "78%
+  released within 24 h; 52% when the crosslinker dose is doubled".
+  Status: verified.
+- **Table 1** (Results, s4.p1) — value from the citing text: "release
+  values per crosslinker dose". Status: verified.
+
+The register values are what the citing paragraphs state; the figure
+and table contents themselves were not extracted from the sample PDF.
+
 ## Knowledge points
 
 - **starch-based hydrogel (SH)** — a hydrogel made from starch, prepared here to test controlled release of a model dye. [§Abstract | s1.p1 | p.1] — status: verified.
@@ -63,11 +76,19 @@
 
 - Front-matter section (s0) is the builder's SAMPLE label line and the paper title, not paper content; its slots are left NOT_REPORTED.
 - Printed page numbers are not shown in the sample PDF; anchors use the physical PDF page (p.1).
-- Figure 1, Figure 2 and Table 1 are cited in the text but their contents were not extracted (text-only sample); findings cite the text statements, not the figure contents.
+- Figure 1, Figure 2 and Table 1 are cited in the text; their values
+  above are the values the citing paragraphs state, recorded in the
+  figure/table register (v1.1) — the figure/table contents themselves
+  were not extracted (text-only sample).
 
 ## Validation
 
 `validate_notes.py` on the filled notes: **PASS, exit 0** (0 errors;
 15 warnings, all honest NOT_REPORTED slots listed above). The full
 filled JSON is the file the validator checked; this Markdown is its
-readable rendering.
+readable rendering. `measure_gain.py` on the same filled notes
+(SAMPLE-001, v1.1 re-run): section coverage 7/7 in order, paper card
+7/7 filled (6 anchored), 20 section slots filled (20 anchored),
+anchored-claim ratio 0.963, knowledge points 1/1 verified,
+figure/table register 3/3 resolved, 15 NOT_REPORTED remaining,
+0 unreviewed candidates.
