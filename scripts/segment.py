@@ -17,8 +17,11 @@ What it does (deterministic, rule-based, stdlib only):
   4. Records figure/table mentions per paragraph (Fig./Figure/Table/图/表
      + number) so anchors can cite them.
   5. Flags warnings: no headings found, duplicate heading titles,
-     two-column reading-order risk (very long lines / mid-line column
-     breaks are NOT repaired -- flagged for human check).
+     two-column reading-order risk (pages whose lines are mostly short
+     fragments are flagged; column order is NOT repaired -- the agent
+     checks a rendered page or re-extracts with -raw, see SKILL.md).
+     A page with many short lines usually means `pdftotext -layout`
+     split two columns into interleaved fragments.
 
 Output sections.json:
   {"sections": [{"order": 1, "id": "s1", "title": "Introduction",
@@ -174,6 +177,24 @@ def main():
                         "(s0, s1, ...) disambiguate them -- use ids in anchors.")
     if total_paras == 0:
         warnings.append("no paragraphs found in extracted text.")
+    # Two-column suspicion: a page of mostly short lines usually means
+    # -layout interleaved two columns. Heuristic only -- the agent must
+    # verify against a rendered page or re-extract with -raw (SKILL.md).
+    suspect_pages = []
+    for pg in pages:
+        lines = [ln for ln in pg["text"].splitlines() if ln.strip()]
+        if len(lines) >= 20:
+            short = [ln for ln in lines if len(ln.strip()) < 45]
+            if len(short) / len(lines) > 0.6:
+                suspect_pages.append(pg["page"])
+    if suspect_pages:
+        warnings.append(
+            "possible two-column layout on page(s) "
+            f"{', '.join(str(p) for p in suspect_pages)}: most lines are "
+            "short fragments, so reading order may be scrambled. Verify "
+            "against a rendered page if pdf-render-tool is available, or "
+            "re-extract with extract_text.py --layout raw and compare; "
+            "record which layout was used in sources.")
     out = {"sections": sections, "warnings": warnings,
            "heading_lines_found": heading_lines,
            "total_paragraphs": total_paras}
