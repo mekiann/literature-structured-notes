@@ -80,6 +80,9 @@ and table contents themselves were not extracted from the sample PDF.
   above are the values the citing paragraphs state, recorded in the
   figure/table register (v1.1) — the figure/table contents themselves
   were not extracted (text-only sample).
+- W4 (v1.2): `premises_for_conclusions` cites 37 °C, which comes from
+  the Methods section (s3.p1), not from the anchor paragraph s5.p1 —
+  the premises field synthesises conditions stated across sections.
 
 ## Validation
 
@@ -92,3 +95,20 @@ readable rendering. `measure_gain.py` on the same filled notes
 anchored-claim ratio 0.963, knowledge points 1/1 verified,
 figure/table register 3/3 resolved, 15 NOT_REPORTED remaining,
 0 unreviewed candidates.
+
+## Validation — v1.2 re-run (2026-11-28)
+
+Same filled values, re-run through the v1.2 scripts (see README
+"Local test — v1.2 re-run"): `check_consistency.py` **PASS, exit 0**
+(0 failures, 0 warnings — K1–K5); `validate_notes.py` **PASS, exit 0**
+(0 errors, 16 warnings — the same 15 NOT_REPORTED slots plus one W4:
+the premises field's 37 °C comes from Methods s3.p1, not from its
+anchor paragraph s5.p1, now explained in "Uncertain / limits" below);
+`measure_gain.py --baseline` against the v1.1 filled notes: **delta 0**
+on every count (same filled values; the gain is in stricter
+verification). One more uncertain item was added for the W4
+explanation:
+
+- W4: `premises_for_conclusions` cites 37 °C, which comes from the
+  Methods section (s3.p1), not from the anchor paragraph s5.p1 — the
+  premises field synthesises conditions stated across sections.
