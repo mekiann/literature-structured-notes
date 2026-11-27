@@ -5,6 +5,7 @@ Usage:
   python3 measure_gain.py --notes /app/work/notes.json
                           --sections /app/work/sections.json
                           [--out /app/work/gain.json]
+                          [--baseline /app/work/notes-baseline.json]
 
 What it does (deterministic, stdlib only -- it measures, it does not judge):
   Counts what the notes actually deliver, so the gain of using this Skill
@@ -16,6 +17,13 @@ What it does (deterministic, stdlib only -- it measures, it does not judge):
     - figure/table register entries resolved vs still NOT_REPORTED
     - NOT_REPORTED slots remaining (honest gaps, listed in uncertain_items)
     - extractive candidates still unreviewed
+
+  With --baseline, the same scorecard is computed for a second notes.json
+  (a real run of the same paper through a base agent without the Skill,
+  or an earlier version of this Skill on the same paper) and a delta
+  block is added. The baseline file must be a real run's output -- never
+  an invented number. The delta is evidence for the "gain" fields of
+  result.json (quality gain / gain verifiability in task.md SS2).
 
 The scorecard is evidence for the "gain" fields of result.json
 (quality gain / gain verifiability in task.md SS2). It compares the
@@ -47,16 +55,7 @@ def has_real_anchor(a):
             and a.get("page") is not None)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--notes", required=True)
-    ap.add_argument("--sections", required=True)
-    ap.add_argument("--out", default=None)
-    args = ap.parse_args()
-    with open(args.notes, encoding="utf-8") as f:
-        notes = json.load(f)
-    with open(args.sections, encoding="utf-8") as f:
-        seg = json.load(f)
+def scorecard(notes, seg):
     section_ids = [s["id"] for s in seg["sections"]]
 
     card = notes.get("paper_card", {})
@@ -105,7 +104,7 @@ def main():
     total_anchored = card_anchored + slots_anchored
     ratio = (total_anchored / total_filled) if total_filled else 1.0
 
-    scorecard = {
+    return {
         "case_id": notes.get("case_id"),
         "section_coverage": {"covered": len(sn_list),
                              "detected": len(section_ids),
@@ -126,20 +125,83 @@ def main():
                 "score both with this script, and record both scorecards "
                 "in result.json gain_evidence; never invent a baseline.",
     }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--notes", required=True)
+    ap.add_argument("--sections", required=True)
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--baseline", default=None,
+                    help="a second notes.json (same paper, base agent "
+                         "without the Skill, or an earlier Skill version) "
+                         "to compare against; adds a delta block")
+    args = ap.parse_args()
+    with open(args.notes, encoding="utf-8") as f:
+        notes = json.load(f)
+    with open(args.sections, encoding="utf-8") as f:
+        seg = json.load(f)
+    card = scorecard(notes, seg)
+    if args.baseline:
+        with open(args.baseline, encoding="utf-8") as f:
+            base_notes = json.load(f)
+        base = scorecard(base_notes, seg)
+        card["baseline"] = base
+        card["delta_vs_baseline"] = {
+            "anchored_claim_ratio":
+                round(card["anchored_claim_ratio"]
+                      - base["anchored_claim_ratio"], 3),
+            "paper_card_filled":
+                card["paper_card"]["filled"]
+                - base["paper_card"]["filled"],
+            "section_slots_filled":
+                card["section_slots"]["filled"]
+                - base["section_slots"]["filled"],
+            "knowledge_points_verified":
+                card["knowledge_points"]["verified"]
+                - base["knowledge_points"]["verified"],
+            "figures_tables_resolved":
+                card["figures_tables"]["resolved"]
+                - base["figures_tables"]["resolved"],
+            "not_reported_remaining":
+                card["not_reported_remaining"]
+                - base["not_reported_remaining"],
+            "unreviewed_extractive_candidates":
+                card["unreviewed_extractive_candidates"]
+                - base["unreviewed_extractive_candidates"],
+            "note": "Positive delta = this run delivers more than the "
+                    "baseline on the same paper and sections; a zero "
+                    "delta is a finding, not a failure to hide.",
+        }
     print(f"gain scorecard for {notes.get('case_id')}: "
-          f"sections {len(sn_list)}/{len(section_ids)} "
-          f"(in order: {coverage}), "
-          f"paper card {card_filled}/{len(CARD_FIELDS)} filled "
-          f"({card_anchored} anchored), "
-          f"slots {slots_filled} filled ({slots_anchored} anchored), "
-          f"anchored-claim ratio {ratio:.3f}, "
-          f"knowledge points {kp_verified} verified / {len(kps)}, "
-          f"figures/tables {ft_resolved}/{ft_total} resolved, "
-          f"{not_reported} NOT_REPORTED remaining, "
-          f"{unreviewed} unreviewed candidate(s)")
+          f"sections {card['section_coverage']['covered']}/"
+          f"{card['section_coverage']['detected']} "
+          f"(in order: {card['section_coverage']['in_order']}), "
+          f"paper card {card['paper_card']['filled']}/"
+          f"{card['paper_card']['of']} filled "
+          f"({card['paper_card']['anchored']} anchored), "
+          f"slots {card['section_slots']['filled']} filled "
+          f"({card['section_slots']['anchored']} anchored), "
+          f"anchored-claim ratio {card['anchored_claim_ratio']:.3f}, "
+          f"knowledge points {card['knowledge_points']['verified']} "
+          f"verified / {card['knowledge_points']['total']}, "
+          f"figures/tables {card['figures_tables']['resolved']}/"
+          f"{card['figures_tables']['total']} resolved, "
+          f"{card['not_reported_remaining']} NOT_REPORTED remaining, "
+          f"{card['unreviewed_extractive_candidates']} unreviewed "
+          f"candidate(s)")
+    if args.baseline:
+        d = card["delta_vs_baseline"]
+        print(f"delta vs baseline: anchored-claim ratio "
+              f"{d['anchored_claim_ratio']:+.3f}, paper card filled "
+              f"{d['paper_card_filled']:+d}, slots filled "
+              f"{d['section_slots_filled']:+d}, knowledge points verified "
+              f"{d['knowledge_points_verified']:+d}, figures/tables "
+              f"resolved {d['figures_tables_resolved']:+d}, "
+              f"NOT_REPORTED remaining {d['not_reported_remaining']:+d}")
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
-            json.dump(scorecard, f, ensure_ascii=False, indent=2)
+            json.dump(card, f, ensure_ascii=False, indent=2)
         print(f"wrote {args.out}")
     return 0
 
