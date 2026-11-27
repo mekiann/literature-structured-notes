@@ -22,6 +22,13 @@ write interpretive claims):
      "candidate" so the agent verifies each one against the paragraph
      before promoting it to a finding. Candidates are never presented as
      findings by this script.
+  3b. Figure/table register: every Figure/Table mentioned in the
+     section's paragraphs, with the paragraph(s) that mention it.
+     Values are NOT extracted from the figure/table itself (a text
+     extractor cannot read a chart) -- the agent records the value the
+     surrounding text states, with an anchor, or leaves it
+     NOT_REPORTED. A finding that cites a figure without a value from
+     the text is not a verified finding.
   4. Term candidates: abbreviation definitions "Full Name (ABBR)" found in
      the text, and repeated capitalised phrases; grouped under a canonical
      term with variants, for the agent to confirm/merge per the dedup
@@ -145,6 +152,20 @@ def main():
             # anchor always names a paragraph that exists (validator E8).
             anchor["paragraph_id"] = first["id"]
             anchor["page"] = first["page"]
+        # Figure/table register for this section: one entry per distinct
+        # Figure/Table mentioned in its paragraphs (mechanical only --
+        # values come from the agent reading the citing text, never
+        # guessed from the label).
+        ft_register = {}
+        for p in s["paragraphs"]:
+            for item in list(p.get("figures", [])) + list(p.get("tables", [])):
+                ft_register.setdefault(item, {"item": item,
+                                              "mentioned_in": [],
+                                              "value_from_text": "NOT_REPORTED",
+                                              "anchor": "NOT_REPORTED -- attach section/paragraph/page after verifying",
+                                              "status": "candidate -- record the value the citing text states, or leave NOT_REPORTED"})
+                if p["id"] not in ft_register[item]["mentioned_in"]:
+                    ft_register[item]["mentioned_in"].append(p["id"])
         section_notes.append({
             "section_id": s["id"], "section_title": s["title"],
             "page_start": s["page_start"], "page_end": s["page_end"],
@@ -153,6 +174,8 @@ def main():
             "result": "NOT_REPORTED", "conclusion": "NOT_REPORTED",
             "link_to_next_section": "NOT_REPORTED",
             "anchor": anchor,
+            "figures_tables": sorted(ft_register.values(),
+                                     key=lambda e: e["item"]),
             "extractive_candidates": candidates(s["paragraphs"]),
         })
         index_entries.append({"kind": "section", "term": s["title"],
@@ -212,6 +235,13 @@ def main():
                 for c in sn["extractive_candidates"]:
                     f.write(f"  - \"{c['sentence']}\" "
                             f"[{c['paragraph_id']}, p.{c['page']}]\n")
+            if sn["figures_tables"]:
+                f.write("- Figures/tables mentioned (record the value the "
+                        "citing text states, or leave NOT_REPORTED):\n")
+                for ft in sn["figures_tables"]:
+                    f.write(f"  - {ft['item']}: mentioned in "
+                            f"{', '.join(ft['mentioned_in'])}; value: "
+                            f"NOT_REPORTED\n")
         f.write("\n## Knowledge points (candidates)\n\n")
         for t in notes["knowledge_points"]:
             f.write(f"- {t['canonical_term']} ({t['abbreviation']}): "
