@@ -1,6 +1,7 @@
 {
  "$schema-note": "Paper-card JSON schema (documentation template, not a filled answer). Every field is either a value copied/checked against the cited paragraph, or the literal string NOT_REPORTED. Empty strings and null are never valid values.",
  "audit_record": "<step-5 claim-audit outcome: claims checked, corrected, dropped, conflicts kept>",
+ "consistency_record": "<step-5b cross-field consistency outcome from check_consistency.py (K1-K5 failures and warnings)>",
  "case_id": "<string, from /input/case.json>",
  "gain_evidence": "<scorecard from measure_gain.py (section coverage, anchored-claim ratio, fill, figure/table resolution), plus a baseline scorecard if one was run>",
  "knowledge_points": [
