@@ -27,11 +27,16 @@ Checks (exit 0 = pass, 1 = fail; warnings never pass a failed check):
   E8  No anchor references a paragraph id or page that does not exist.
   E9  No filled claim contains a hedging placeholder left over
       ("TODO", "TBD", "XXX", "[?]", "???").
+ E10  Figure/table register: every mentioned_in paragraph id exists;
+      a filled value_from_text (not NOT_REPORTED) must carry an anchor
+      naming a real paragraph id on a page inside that section.
 
 Warnings (do not fail, but must be listed in uncertain_items):
   W1  Any field still NOT_REPORTED.
   W2  Extractive candidates still present unreviewed (a finding that
       copies a candidate sentence verbatim without an anchor).
+  W3  Figure/table register entries still NOT_REPORTED (the value the
+      citing text states was not recorded).
 
 Stdlib only. Deterministic.
 """
@@ -165,6 +170,29 @@ def main():
         # E8: section-level anchor paragraph must exist
         if "anchor" in sn:
             check_anchor(sn["anchor"], f"{where} (section anchor)")
+        # E10: figure/table register -- mentioned_in ids must exist; a
+        # filled value needs a real anchor naming a paragraph in range.
+        for ft in sn.get("figures_tables", []):
+            fwhere = f"{where} figures_tables[{ft.get('item')!r}]"
+            for pid in ft.get("mentioned_in", []):
+                if pid not in para_index:
+                    errors.append(f"E10 {fwhere}: mentioned paragraph "
+                                  f"{pid!r} does not exist")
+            v = ft.get("value_from_text")
+            if v is None or (isinstance(v, str) and v.strip() == ""):
+                errors.append(f"E10 {fwhere}: value_from_text is empty/null "
+                              "-- use NOT_REPORTED")
+            elif isinstance(v, str) and v.strip() == NOT_REPORTED:
+                warnings.append(f"W3: {fwhere} value is NOT_REPORTED")
+            elif isinstance(v, str) and any(p in v for p in PLACEHOLDERS):
+                errors.append(f"E10 {fwhere}: value contains a leftover "
+                              "placeholder")
+            else:
+                a = ft.get("anchor")
+                if not a:
+                    errors.append(f"E10 {fwhere}: filled value has no anchor")
+                else:
+                    check_anchor(a, fwhere)
 
     # E6/E7: knowledge points
     seen_terms, seen_abbrs = {}, {}
