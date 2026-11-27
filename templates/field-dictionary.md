@@ -28,6 +28,57 @@ and note a printed-page offset in `uncertain_items` if they differ.
 | limitations | Limitations the paper states; add only ones verifiable from method/data | NOT_REPORTED |
 | premises_for_conclusions | Conditions under which each conclusion holds (scope, parameter range, assumptions, controls). This is the field most often dropped by generic summaries — a conclusion without its premises must not be reused as a general claim. | NOT_REPORTED, and mark the conclusion itself as scope-limited in `uncertain_items` |
 
+## Figure / table register (one entry per mention)
+
+`build_notes.py` lists every Figure/Table a section's paragraphs mention,
+with the paragraph(s) that mention it. For each entry:
+
+- `value_from_text`: the value the **citing text** states about that
+  figure/table (e.g. "78% released within 24 h, Figure 2"), copied with
+  its unit and anchored to the citing paragraph. A text extractor cannot
+  read a chart image, so a value read off a rendered figure must say so
+  in `uncertain_items` ("read from rendered Figure 2, not from extracted
+  text") and still carry the paragraph anchor of the text that discusses it.
+- If the text mentions a figure/table but states no value for it, the
+  entry stays `NOT_REPORTED` and the finding must not cite that
+  figure/table as evidence for a number.
+- A finding that cites "Figure 2" while the register entry is
+  NOT_REPORTED is an unanchored claim: fix the finding or resolve the
+  register entry, never leave both.
+
+## Claim audit (re-read before delivery)
+
+After filling and before validation, audit every filled claim once
+against its own anchor paragraph:
+
+1. Re-read the cited paragraph in full. Does it actually state the
+   claim, with the same number, unit and sign? A paraphrase that drifts
+   (e.g. "most" for "78%", or a reversed comparison) is rewritten or
+   dropped — never left in place.
+2. Check the number against the same number anywhere else it appears
+   (Abstract vs Results vs Conclusion). If the paper gives different
+   values in different places, record both with anchors in
+   `uncertain_items`; do not pick the rounder one.
+3. Check cross-field consistency:
+   - every `key_findings` item has its scope in
+     `premises_for_conclusions` (sample, parameter range, controls);
+     a finding without premises is flagged scope-limited;
+   - every `limitations` item traces to a method/data condition in
+     `methods`/`data` or to a sentence the paper itself states;
+     a limitation invented from plausibility is removed;
+   - `link_to_next_section` names a real handover (a question, gap or
+     result the next section actually picks up), not a generic
+     "this leads to the next section".
+4. Check the figure/table register: each resolved entry's value matches
+   the citing paragraph; each unresolved entry is listed in
+   `uncertain_items` with the reason (text states no value / figure
+   content not extractable).
+
+Record the audit in `result.json` `audit_record`: how many claims were
+checked, how many were corrected or dropped, and any conflicts kept.
+An audit that changed nothing still records "0 corrections" — a missing
+audit record is a gap, not a pass.
+
 ## Knowledge-point dedup / merge rules
 
 1. **One canonical term per concept.** First occurrence's full form wins
