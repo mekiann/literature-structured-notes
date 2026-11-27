@@ -34,7 +34,7 @@ review across papers you have not read — those are different tasks.
    `status: "unable-to-judge"`, `uncertain_items: ["no paper file found in
    the case; looked in: <paths checked>"]`, and no invented notes.
 
-## Workflow (7 steps, save partial deliverables early)
+## Workflow (8 steps, save partial deliverables early)
 
 Work under `/app/work`; final outputs under `/app/output`. Save
 `notes.json`/`notes.md` after step 3 already (skeleton), and again after
@@ -56,7 +56,7 @@ after the paper was read wastes the whole budget.
 ### Step 1 — Extract text, page-aware (script: `scripts/extract_text.py`)
 
 ```bash
-python3 scripts/extract_text.py --input <paper.pdf|paper.txt|paper.md> \
+python3 scripts/extract_text.py --input <paper.pdf|paper.docx|paper.txt|paper.md> \
   --out-text /app/work/paper.txt --out-pages /app/work/pages.json
 ```
 
@@ -64,6 +64,14 @@ python3 scripts/extract_text.py --input <paper.pdf|paper.txt|paper.md> \
   page by page with `-layout`; `pdfinfo` gives the page count. Every
   paragraph keeps the page it came from — this is what makes anchors
   verifiable later.
+- Word (`.docx`): converted to text with LibreOffice (`soffice`,
+  declared resource `office-renderer`) when present; if LibreOffice is
+  absent the script exits 2 — record `status: partial` with the missing
+  tool named, never guess content.
+- If one PDF page fails to extract, the run continues with the remaining
+  pages; the failed page is marked in `pages.json`
+  (`extraction_failed: true`) and must be listed in `uncertain_items`,
+  with `status: partial` if key content may live on that page.
 - If the PDF is encrypted, the script exits with reason `encrypted_pdf`:
   record `status: partial`, do not guess content, note the human handover.
 - If fewer than 200 characters come out, the paper is probably a scanned
@@ -87,7 +95,11 @@ python3 scripts/segment.py --pages /app/work/pages.json --out /app/work/sections
 ```
 
 - Detects headings in English and Chinese, numbered (`1 Introduction`,
-  `3.2 Methods`) and unnumbered (`Abstract`, `摘要`, `结果与讨论`).
+  `3.2 Methods`, `2: Methods`) and unnumbered (`Abstract`, `摘要`,
+  `结果与讨论`, `Experimental Setup`, `Data Availability Statement`,
+  `Author Contributions`, `Future Work`). A trailing full stop on a
+  short known heading (`Introduction.`) is tolerated; a body sentence
+  such as `3.5 g of sample was added.` is never promoted to a heading.
   Sections exist only where a heading line is actually found; text before
   the first heading is `front-matter`. No generic template sections are
   ever imposed — if the paper has no "Methods" heading, there is no
@@ -121,8 +133,14 @@ This produces, mechanically and deterministically:
 - **extractive candidates**: up to 3 sentences per section containing a
   number, percent, or result cue word, labelled `candidate` — these are
   pointers for you to verify, never findings;
-- **term candidates**: abbreviation definitions `Full Name (ABBR)` and
-  repeated capitalised phrases, grouped as canonical term + variants;
+- **limitation candidates**: up to 2 sentences per section carrying a
+  limitation cue (`only`, `limited`, `however`, `仅`, `局限` ...) —
+  pointers for the `limitations` field, which result-cue scoring
+  misses; verify each one against its paragraph before promoting it;
+- **term candidates**: abbreviation definitions `Full Name (ABBR)`,
+  `Full Name, also known as Short` / `hereafter Short` forms, and
+  repeated capitalised phrases (2+ occurrences), grouped as canonical
+  term + variants;
 - a **figure/table register** per section: every Figure/Table the
   section's paragraphs mention, with the mentioning paragraph ids —
   the value each one carries is filled in step 4 from the citing text,
@@ -148,7 +166,17 @@ For the paper card, follow `templates/field-dictionary.md`:
   holds. A conclusion recorded without its premises must be flagged in
   `uncertain_items` as scope-limited.
 - Numbers keep the paper's units and sign; a number whose unit you
-  cannot find is `NOT_REPORTED`, not a bare number.
+  cannot find is `NOT_REPORTED`, not a bare number. A measured number
+  you write must occur in the paper's extracted text — the validator's
+  E11 check rejects numbers that appear nowhere in the paper, and its
+  W4 warning flags numbers that are not in the cited paragraph (e.g. a
+  premises value synthesised from another section: name the source
+  section in `uncertain_items`).
+- Fill `limitations` from the paper, not from plausibility: use the
+  `limitation_candidates` of the Discussion/Conclusion sections and
+  check each one against its paragraph; a limitation with no cue word
+  in its anchor paragraph is flagged by the step-5 consistency check
+  (K4) — re-read the paragraph or drop it.
 
 Knowledge points: confirm each candidate term against the text, merge
 synonyms/abbreviations/spelling variants into one entry per the dedup
@@ -177,7 +205,7 @@ Rules for every filled claim:
   do not use the paper's field labels (or any domain label in the case)
   to invent data the text does not contain.
 
-### Step 5 — Claim audit & verifiability scorecard
+### Step 5 — Claim audit & consistency check
 
 Before validation, audit the filled notes once against their own
 anchors, following the claim-audit rules in
@@ -192,7 +220,24 @@ Record the audit in `result.json` `audit_record`: claims checked,
 claims corrected, claims dropped, conflicts kept. An audit with 0
 corrections still records "0 corrections".
 
-Then measure what the notes actually deliver:
+Then run the machine-checkable part of that audit:
+
+```bash
+python3 scripts/check_consistency.py --notes /app/work/notes.json \
+  --sections /app/work/sections.json --out /app/work/consistency.json
+```
+
+Checks K1–K5 (see `templates/field-dictionary.md`): findings without
+premises (K1, fail), a `link_to_next_section` naming the wrong next
+section (K2, fail), a `key_findings` number missing from every section
+result (K3, warn), a limitation with no traceable cue (K4, warn), a
+knowledge-point definition anchored to a paragraph that never names
+the term (K5, fail). Exit 1 = fix every `FAIL` line before continuing.
+Copy `consistency.json` into `result.json` as `consistency_record`.
+
+### Step 6 — Verifiability scorecard
+
+Measure what the notes actually deliver:
 
 ```bash
 python3 scripts/measure_gain.py --notes /app/work/notes.json \
@@ -203,12 +248,20 @@ python3 scripts/measure_gain.py --notes /app/work/notes.json \
 anchored-claim ratio, paper-card fill, knowledge points verified,
 figure/table entries resolved, NOT_REPORTED remaining). Copy it into
 `result.json` as `gain_evidence`. For a fair baseline comparison, run
-the same paper through a base agent without the Skill, score both
-outputs with this script, and record both scorecards — never invent a
-baseline number. The scorecard measures this run only; a low score is
-a finding to report, not a failure to hide.
+the same paper through a base agent without the Skill and pass its
+notes with `--baseline`:
 
-### Step 6 — Validate (script: `scripts/validate_notes.py`)
+```bash
+python3 scripts/measure_gain.py --notes /app/work/notes.json \
+  --sections /app/work/sections.json --baseline /app/work/notes-baseline.json \
+  --out /app/work/gain.json
+```
+
+The `--baseline` file must be a real run's output on the same paper —
+never an invented number. The scorecard measures this run only; a low
+score is a finding to report, not a failure to hide.
+
+### Step 7 — Validate (script: `scripts/validate_notes.py`)
 
 ```bash
 python3 scripts/validate_notes.py --notes /app/work/notes.json \
@@ -219,11 +272,13 @@ Exit 0 = pass (warnings are honest gaps, and must appear in
 `uncertain_items`). Exit 1 = fail: fix every `FAIL` line — missing
 anchors, empty fields, section-coverage mismatch, duplicate terms,
 anchors pointing at non-existent paragraphs/pages, leftover
-`TODO/TBD/XXX` placeholders. Re-run until it passes. **Never deliver
-notes that fail validation, and never weaken the validator to make
-them pass.**
+`TODO/TBD/XXX` placeholders, and **E11: a measured number that occurs
+nowhere in the paper**. W4 warns when a measured number is not in its
+cited paragraph — name the source section in `uncertain_items`.
+Re-run until it passes. **Never deliver notes that fail validation,
+and never weaken the validator to make them pass.**
 
-### Step 7 — Deliver to `/app/output`
+### Step 8 — Deliver to `/app/output`
 
 Copy the validated files and write `result.json`:
 
@@ -232,13 +287,15 @@ Copy the validated files and write `result.json`:
 - `notes.md` — the same notes as readable Markdown (regenerate from
   `notes.json` after filling; keep the two in sync).
 - `index.json` — search index (sections + terms + anchors).
-- `gain.json` — the verifiability scorecard from step 5.
+- `gain.json` — the verifiability scorecard from step 6.
+- `consistency.json` — the step-5 consistency report (K1–K5).
 - `result.json` — `case_id`, `status` (`success` | `partial` |
   `unable-to-judge`, with a reason), `paper_card`,
   `section_notes`, `knowledge_points`, `sources` (paper filename,
   extraction tool actually used, extraction layout used, sections detected), `uncertain_items`,
-  `gain_evidence` (the step-5 scorecard, plus a baseline scorecard if
+  `gain_evidence` (the step-6 scorecard, plus a baseline scorecard if
   one was run), `audit_record` (step-5 audit outcome),
+  `consistency_record` (step-5 K1–K5 outcome),
   and a `change_record` (what was filled, what stayed NOT_REPORTED,
   validator result). No output_contract fields were published in the
   challenge files for this task, so `result.json` carries the §3 fields
@@ -255,8 +312,11 @@ Copy the validated files and write `result.json`:
 | Capability | Preferred | Fallback | If absent |
 |---|---|---|---|
 | PDF text, page-aware | `pdftotext`/`pdfinfo` 24.02.0 (poppler) | harness `pdf-text-tool`; `.txt` copy if supplied | status `partial`, no invented text |
+| Word input | LibreOffice 24.2.7.2 (`soffice`, converts `.docx` to text) | — | status `partial`, missing tool named |
+| One PDF page fails to extract | per-page resilience in `extract_text.py` (other pages still extracted; failed page marked) | — | failed page in `uncertain_items`, status `partial` if key content may live there |
 | Section/term extraction, validation | Python 3.12 stdlib scripts in `scripts/` | — (no third-party libs needed) | — |
-| Verifiability scorecard | `scripts/measure_gain.py` (stdlib) | — | scorecard skipped; `gain_evidence` records why |
+| Cross-field consistency | `scripts/check_consistency.py` (K1–K5, stdlib) | — | audit falls back to the manual step-5 reading check; `consistency_record` records why |
+| Verifiability scorecard | `scripts/measure_gain.py` (stdlib, `--baseline` delta) | — | scorecard skipped; `gain_evidence` records why |
 | Scanned-image PDF | `ocr-tool` (declared) | — | low-text warning, status `partial` |
 | Rendering previews | LibreOffice 24.2.7.2 | skip preview, note it | text/JSON outputs unaffected |
 | LaTeX / pandoc / tesseract / ghostscript | not required | not required | not used by this Skill |
@@ -274,6 +334,8 @@ cite paragraph ids, not free text.
 | No paper file in the case | `status: unable-to-judge`, list paths checked, no notes |
 | Encrypted / permission-restricted PDF | `status: partial`, reason `encrypted_pdf`, human handover note |
 | Scanned image, <200 chars extracted | `status: partial`, low-text warning, OCR handover |
+| One PDF page fails to extract | continue with the other pages; failed page marked in `pages.json` and listed in `uncertain_items`; `status: partial` if key content may live there |
+| `.docx` input, LibreOffice absent | `status: partial`, missing tool named, no guessed text |
 | No headings detected | single `unsectioned` section; chapter alignment marked as a limit |
 | Two-column reading-order errors suspected | flag in `uncertain_items`; re-extract with `--layout raw` and keep the coherent layout (step 1); check a rendered page if `pdf-render-tool` is available |
 | Very long paper / token budget pressure | summarise per section in order, save after each section; never skip a section silently — list skipped sections in `uncertain_items` |
@@ -287,13 +349,15 @@ cite paragraph ids, not free text.
 3. Every filled paper-card field has a `field_anchors` entry whose
    paragraph exists on the stated page.
 4. `result.json` has `case_id`, `status`, `sources`,
-   `uncertain_items`, `gain_evidence`, `audit_record`, and
-   `change_record`; `status` is honest (`partial` if anything is
-   NOT_REPORTED).
-5. The public GitHub repo for this Skill is
+   `uncertain_items`, `gain_evidence`, `audit_record`,
+   `consistency_record`, and `change_record`; `status` is honest
+   (`partial` if anything is NOT_REPORTED).
+5. `check_consistency.py` exits 0 (K1–K5) on the final `notes.json`,
+   and every W4 warning is explained in `uncertain_items`.
+6. The public GitHub repo for this Skill is
    https://github.com/mekiann/literature-structured-notes and
    `GITHUB_URL.txt` (first line: the repo URL, second line: `SKILL.md`)
    is in the submission root; the submitted Skill matches the repo
    version.
-6. No number, claim, score or log appears that was not read from the
+7. No number, claim, score or log appears that was not read from the
    paper or produced by a script run in this session.
