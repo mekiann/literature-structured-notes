@@ -5,6 +5,7 @@ Usage:
   python3 extract_text.py --input <paper.pdf | paper.txt | paper.md>
                           --out-text /app/work/paper.txt
                           --out-pages /app/work/pages.json
+                          [--layout layout|raw]   (default: layout)
 
 PDF path (preferred when a real PDF is supplied):
   uses `pdftotext` (poppler, pdf-text-tool) page by page with -layout so every
@@ -12,6 +13,10 @@ PDF path (preferred when a real PDF is supplied):
   If pdftotext/pdfinfo is absent, exits non-zero with a clear message and the
   caller must fall back to the degraded path in SKILL.md (read the PDF by
   whatever tool the harness provides, or record status=partial).
+  --layout raw re-extracts with `pdftotext -raw` (no column preservation):
+  use it when segment.py warns of a possible two-column layout, then
+  compare the two extractions and record which layout was kept in
+  sources; never silently mix pages from both.
 
 Plain-text / Markdown input (.txt/.md): read as UTF-8, one logical page
 (page 1), form-feed characters split pages if present.
@@ -30,7 +35,7 @@ import subprocess
 import sys
 
 
-def extract_pdf(path, out_text, out_pages):
+def extract_pdf(path, out_text, out_pages, layout="layout"):
     pdftotext = shutil.which("pdftotext")
     pdfinfo = shutil.which("pdfinfo")
     if not pdftotext or not pdfinfo:
@@ -60,9 +65,10 @@ def extract_pdf(path, out_text, out_pages):
         print("ERROR: pdfinfo reports no pages.", file=sys.stderr)
         return 3
     page_texts = []
+    mode_flag = "-layout" if layout == "layout" else "-raw"
     for n in range(1, pages + 1):
         r = subprocess.run([pdftotext, "-f", str(n), "-l", str(n),
-                            "-layout", "-enc", "UTF-8", path, "-"],
+                            mode_flag, "-enc", "UTF-8", path, "-"],
                            capture_output=True, text=True)
         if r.returncode != 0:
             print(f"ERROR: pdftotext failed on page {n}: {r.stderr.strip()}",
@@ -110,13 +116,17 @@ def main():
     ap.add_argument("--input", required=True)
     ap.add_argument("--out-text", required=True)
     ap.add_argument("--out-pages", required=True)
+    ap.add_argument("--layout", choices=["layout", "raw"], default="layout",
+                    help="pdftotext mode: layout (default) or raw "
+                         "(two-column fallback, see SKILL.md)")
     args = ap.parse_args()
     if not os.path.exists(args.input):
         print(f"ERROR: input not found: {args.input}", file=sys.stderr)
         return 1
     ext = os.path.splitext(args.input)[1].lower()
     if ext == ".pdf":
-        return extract_pdf(args.input, args.out_text, args.out_pages)
+        return extract_pdf(args.input, args.out_text, args.out_pages,
+                           layout=args.layout)
     if ext in (".txt", ".md", ".markdown"):
         return extract_text_file(args.input, args.out_text, args.out_pages)
     print(f"ERROR: unsupported input type '{ext}'. Supported: .pdf, .txt, .md",
