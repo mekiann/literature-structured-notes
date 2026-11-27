@@ -79,6 +79,36 @@ checked, how many were corrected or dropped, and any conflicts kept.
 An audit that changed nothing still records "0 corrections" — a missing
 audit record is a gap, not a pass.
 
+## E11 — no invented numbers (validator, hard check)
+
+Every measured number in a filled claim must occur somewhere in the
+extracted paper text, or the validator fails the notes (E11). A
+"measured number" is a number with a unit or `%` sign, a decimal, a
+range, or a bare integer ≥ 100 that is not a round multiple of 10
+("about 100" for 102 is a paraphrase and is outside this check; the
+claim audit above still has to re-read the paragraph). Numbers are
+compared after normalising units (`37 °C` = `37°C`, `µ` = `μ`).
+
+A measured number that is not in its cited anchor paragraph is a W4
+warning, not a failure: it is legitimate when a field synthesises
+conditions from across the paper (e.g. `premises_for_conclusions`
+citing a temperature stated in Methods while anchored to Discussion)
+— but then the source section must be named in `uncertain_items`.
+
+## Cross-field consistency checks K1–K5 (script: check_consistency.py)
+
+The machine-checkable part of the claim audit, run as step 5b before
+validation. Exit 1 on any FAIL; the report is `result.json`
+`consistency_record`.
+
+| Check | Rule | Severity |
+|-|-|-|
+| K1 | `key_findings` filled ⇒ `premises_for_conclusions` filled | FAIL |
+| K2 | A `link_to_next_section` naming a section id (`sN`) must name the section that actually follows; a link naming no section id is a generic handover | FAIL / warn |
+| K3 | A measured number in `key_findings` must also appear in some section note's `result`/`conclusion` | warn |
+| K4 | A `limitations` item whose anchor paragraph has no limitation cue word (`only`, `limited`, `not`, `however`, `仅`, `局限`, `不足`, `然而` ...) and is not in a Discussion/Conclusion/Limitations section may be invented from plausibility | warn |
+| K5 | A knowledge point's definition anchor paragraph must contain the canonical term (case-insensitive, hyphens ignored) | FAIL |
+
 ## Knowledge-point dedup / merge rules
 
 1. **One canonical term per concept.** First occurrence's full form wins
@@ -102,7 +132,9 @@ audit record is a gap, not a pass.
 
 - Machine-checkable: section coverage (E4), anchor existence and page
   match (E8), field presence / non-emptiness (E2), dedup (E7),
-  placeholder leftovers (E9) — all enforced by `validate_notes.py`.
+  placeholder leftovers (E9), measured numbers occurring in the paper
+  (E11), findings-with-premises / link targets / term anchors (K1, K2,
+  K5) — all enforced by `validate_notes.py` and `check_consistency.py`.
 - Human-confirmed (agent must judge, validator cannot): whether an anchor
   points at the paragraph that *actually states* the claim (not just a
   paragraph in the same section); whether a number was copied with the
