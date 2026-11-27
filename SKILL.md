@@ -34,11 +34,24 @@ review across papers you have not read — those are different tasks.
    `status: "unable-to-judge"`, `uncertain_items: ["no paper file found in
    the case; looked in: <paths checked>"]`, and no invented notes.
 
-## Workflow (6 steps, save partial deliverables early)
+## Workflow (7 steps, save partial deliverables early)
 
 Work under `/app/work`; final outputs under `/app/output`. Save
 `notes.json`/`notes.md` after step 3 already (skeleton), and again after
 each step — a crash must never lose the skeleton.
+
+### Step 0 — Pre-flight (30 seconds, saves failed runs)
+
+```bash
+python3 --version            # 3.10+ (scripts are stdlib only)
+which pdftotext pdfinfo      # page-aware PDF extraction
+python3 scripts/segment.py --help   # scripts run at all
+```
+
+If `pdftotext` is absent, do not start step 1 on a PDF: use the harness
+`pdf-text-tool` if provided, a supplied `.txt`/`.md` copy, or record
+`status: partial` with the missing tool named. A run that fails at step 1
+after the paper was read wastes the whole budget.
 
 ### Step 1 — Extract text, page-aware (script: `scripts/extract_text.py`)
 
@@ -61,6 +74,11 @@ python3 scripts/extract_text.py --input <paper.pdf|paper.txt|paper.md> \
   version of the paper if the case supplies one; (c) record
   `status: partial` with `uncertain_items: ["pdftotext unavailable; no
   text layer extracted"]`. Never fabricate text from a filename.
+- Two-column papers: if `segment.py` (step 2) warns of a possible
+  two-column layout, re-extract with `--layout raw` and compare the two
+  texts; keep the layout whose sentences read coherently, record which
+  one was kept in `sources`, and note the discarded one in
+  `uncertain_items`. Never mix pages from both extractions.
 
 ### Step 2 — Segment into the paper's OWN sections (script: `scripts/segment.py`)
 
@@ -76,8 +94,13 @@ python3 scripts/segment.py --pages /app/work/pages.json --out /app/work/sections
   Methods section note, and that is recorded as a limit, not papered over.
 - Every paragraph gets an id `s<order>.p<n>` and its page; figure/table
   mentions (`Figure 2`, `表 3`) are recorded per paragraph.
-- Read `sections.json` warnings: no headings found, duplicate titles, or
-  an empty extraction each change what you may claim later.
+- Read `sections.json` warnings: no headings found, duplicate titles, a
+  possible two-column layout, or an empty extraction each change what
+  you may claim later. A two-column warning means step 1's `--layout raw`
+  comparison (above) before you fill anything.
+- Long papers: process sections in order in batches, saving `notes.json`
+  after each section; never skip a section silently — list skipped
+  sections in `uncertain_items`.
 
 ### Step 3 — Build the skeleton (script: `scripts/build_notes.py`)
 
@@ -100,6 +123,10 @@ This produces, mechanically and deterministically:
   pointers for you to verify, never findings;
 - **term candidates**: abbreviation definitions `Full Name (ABBR)` and
   repeated capitalised phrases, grouped as canonical term + variants;
+- a **figure/table register** per section: every Figure/Table the
+  section's paragraphs mention, with the mentioning paragraph ids —
+  the value each one carries is filled in step 4 from the citing text,
+  never from the label;
 - a **search index** (`index.json`) of sections and terms.
 Save these files now — this is the honest partial deliverable.
 
@@ -130,6 +157,15 @@ paper's own terms and an anchor. If two passages define the same term
 differently, keep both anchors, set status `candidate`, and describe
 the conflict in `uncertain_items` — never silently pick one.
 
+Figures and tables: for each entry in the section's figure/table
+register, record `value_from_text` — the value the citing paragraph
+states about that figure/table, with an anchor to that paragraph. A
+text extractor cannot read a chart image: if a value was read off a
+rendered figure, say so in `uncertain_items` and still anchor the
+paragraph that discusses it. If the citing text states no value, the
+entry stays `NOT_REPORTED` and no finding may cite that figure/table
+as evidence for a number — see `templates/field-dictionary.md`.
+
 Rules for every filled claim:
 - Re-read the cited paragraph before writing the claim down. The
   extractive candidate sentence alone is not evidence.
@@ -141,7 +177,38 @@ Rules for every filled claim:
   do not use the paper's field labels (or any domain label in the case)
   to invent data the text does not contain.
 
-### Step 5 — Validate (script: `scripts/validate_notes.py`)
+### Step 5 — Claim audit & verifiability scorecard
+
+Before validation, audit the filled notes once against their own
+anchors, following the claim-audit rules in
+`templates/field-dictionary.md`: re-read each cited paragraph and
+check number, unit and sign; check the same number wherever else it
+appears in the paper; check cross-field consistency (every finding has
+its premises; every limitation traces to a method/data condition or a
+sentence the paper states; every `link_to_next_section` names a real
+handover); check the figure/table register. Correct or drop every
+claim that fails the audit — never leave a drifted paraphrase in place.
+Record the audit in `result.json` `audit_record`: claims checked,
+claims corrected, claims dropped, conflicts kept. An audit with 0
+corrections still records "0 corrections".
+
+Then measure what the notes actually deliver:
+
+```bash
+python3 scripts/measure_gain.py --notes /app/work/notes.json \
+  --sections /app/work/sections.json --out /app/work/gain.json
+```
+
+`gain.json` is the verifiability scorecard (section coverage,
+anchored-claim ratio, paper-card fill, knowledge points verified,
+figure/table entries resolved, NOT_REPORTED remaining). Copy it into
+`result.json` as `gain_evidence`. For a fair baseline comparison, run
+the same paper through a base agent without the Skill, score both
+outputs with this script, and record both scorecards — never invent a
+baseline number. The scorecard measures this run only; a low score is
+a finding to report, not a failure to hide.
+
+### Step 6 — Validate (script: `scripts/validate_notes.py`)
 
 ```bash
 python3 scripts/validate_notes.py --notes /app/work/notes.json \
@@ -156,7 +223,7 @@ anchors pointing at non-existent paragraphs/pages, leftover
 notes that fail validation, and never weaken the validator to make
 them pass.**
 
-### Step 6 — Deliver to `/app/output`
+### Step 7 — Deliver to `/app/output`
 
 Copy the validated files and write `result.json`:
 
@@ -165,10 +232,13 @@ Copy the validated files and write `result.json`:
 - `notes.md` — the same notes as readable Markdown (regenerate from
   `notes.json` after filling; keep the two in sync).
 - `index.json` — search index (sections + terms + anchors).
+- `gain.json` — the verifiability scorecard from step 5.
 - `result.json` — `case_id`, `status` (`success` | `partial` |
   `unable-to-judge`, with a reason), `paper_card`,
   `section_notes`, `knowledge_points`, `sources` (paper filename,
-  extraction tool actually used, sections detected), `uncertain_items`,
+  extraction tool actually used, extraction layout used, sections detected), `uncertain_items`,
+  `gain_evidence` (the step-5 scorecard, plus a baseline scorecard if
+  one was run), `audit_record` (step-5 audit outcome),
   and a `change_record` (what was filled, what stayed NOT_REPORTED,
   validator result). No output_contract fields were published in the
   challenge files for this task, so `result.json` carries the §3 fields
@@ -186,6 +256,7 @@ Copy the validated files and write `result.json`:
 |---|---|---|---|
 | PDF text, page-aware | `pdftotext`/`pdfinfo` 24.02.0 (poppler) | harness `pdf-text-tool`; `.txt` copy if supplied | status `partial`, no invented text |
 | Section/term extraction, validation | Python 3.12 stdlib scripts in `scripts/` | — (no third-party libs needed) | — |
+| Verifiability scorecard | `scripts/measure_gain.py` (stdlib) | — | scorecard skipped; `gain_evidence` records why |
 | Scanned-image PDF | `ocr-tool` (declared) | — | low-text warning, status `partial` |
 | Rendering previews | LibreOffice 24.2.7.2 | skip preview, note it | text/JSON outputs unaffected |
 | LaTeX / pandoc / tesseract / ghostscript | not required | not required | not used by this Skill |
@@ -204,9 +275,10 @@ cite paragraph ids, not free text.
 | Encrypted / permission-restricted PDF | `status: partial`, reason `encrypted_pdf`, human handover note |
 | Scanned image, <200 chars extracted | `status: partial`, low-text warning, OCR handover |
 | No headings detected | single `unsectioned` section; chapter alignment marked as a limit |
-| Two-column reading-order errors suspected | flag in `uncertain_items`; check a rendered page if `pdf-render-tool` is available |
+| Two-column reading-order errors suspected | flag in `uncertain_items`; re-extract with `--layout raw` and keep the coherent layout (step 1); check a rendered page if `pdf-render-tool` is available |
 | Very long paper / token budget pressure | summarise per section in order, save after each section; never skip a section silently — list skipped sections in `uncertain_items` |
 | Validator fails | fix the notes, never the validator; deliver only after exit 0 |
+| Audit finds a drifted claim | correct or drop the claim; record it in `audit_record` |
 
 ## Self-check (before reporting done)
 
@@ -215,9 +287,13 @@ cite paragraph ids, not free text.
 3. Every filled paper-card field has a `field_anchors` entry whose
    paragraph exists on the stated page.
 4. `result.json` has `case_id`, `status`, `sources`,
-   `uncertain_items`, and `change_record`; `status` is honest
-   (`partial` if anything is NOT_REPORTED).
-5. No `GITHUB_URL.txt` is included (no GitHub account is available for
-   this submission; the 5-point bonus is skipped by design).
+   `uncertain_items`, `gain_evidence`, `audit_record`, and
+   `change_record`; `status` is honest (`partial` if anything is
+   NOT_REPORTED).
+5. The public GitHub repo for this Skill is
+   https://github.com/mekiann/literature-structured-notes and
+   `GITHUB_URL.txt` (first line: the repo URL, second line: `SKILL.md`)
+   is in the submission root; the submitted Skill matches the repo
+   version.
 6. No number, claim, score or log appears that was not read from the
    paper or produced by a script run in this session.
