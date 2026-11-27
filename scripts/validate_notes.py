@@ -30,6 +30,13 @@ Checks (exit 0 = pass, 1 = fail; warnings never pass a failed check):
  E10  Figure/table register: every mentioned_in paragraph id exists;
       a filled value_from_text (not NOT_REPORTED) must carry an anchor
       naming a real paragraph id on a page inside that section.
+ E11  No invented numbers: every measured number in a filled claim (a
+      number with a unit or %, a decimal, a range, or a bare integer
+      >= 100 that is not a round multiple of 10) must occur somewhere in
+      the extracted paper text. A number that appears nowhere in the
+      paper is a fabrication -- fix or drop the claim. Round paraphrases
+      ("about 100" for 102) are outside this check by design; the claim
+      audit (SKILL.md step 5) still has to re-read the paragraph.
 
 Warnings (do not fail, but must be listed in uncertain_items):
   W1  Any field still NOT_REPORTED.
@@ -37,6 +44,11 @@ Warnings (do not fail, but must be listed in uncertain_items):
       copies a candidate sentence verbatim without an anchor).
   W3  Figure/table register entries still NOT_REPORTED (the value the
       citing text states was not recorded).
+  W4  A measured number in a filled claim does not occur in its cited
+      anchor paragraph (it may come from another section, e.g. a
+      premises field synthesising a Methods condition -- then the
+      source section must be named in uncertain_items). E11 still
+      requires the number to occur somewhere in the paper.
 
 Stdlib only. Deterministic.
 """
@@ -44,6 +56,72 @@ import argparse
 import json
 import re
 import sys
+
+# Units a measured number may carry. Keep in sync with build_notes.py
+# UNITS (same list, same meaning: a claim number counts as "measured"
+# only with one of these, a % sign, or as a decimal / large integer).
+UNITS = (r"%|percent|°C|°F|℃|K\b|mg|μg|µg|ng|pg|g\b|kg\b|mL|μL|µL|L\b|"
+         r"nm|μm|µm|mm|cm|m\b|Å|mM|M\b|mol|mmol|μmol|Pa|kPa|MPa|GPa|"
+         r"eV|keV|Da|kDa|rpm|Hz|kHz|MHz|W\b|mW|kW|V\b|mV|A\b|mA|ppm|ppb|"
+         r"fold|wt%|at%|vol%|h\b|min|s\b|ms|d\b|wk|yr|mmHg|N\b|J\b|cal|"
+         r"mol/L|mg/mL|×|°")
+NUM_TOKEN_RE = re.compile(
+    r"\d[\d,]*(?:\.\d+)?(?:\s*[-–—]\s*\d[\d,]*(?:\.\d+)?)?\s*(?:" + UNITS + r")?"
+    r"|\d[\d,]*(?:\.\d+)?")
+DIGITS_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _norm(t):
+    """Normalise text for number comparison: unify micro signs and the
+    Celsius sign, drop the space between a number and its unit, collapse
+    dashes and whitespace."""
+    t = t.replace("µ", "μ").replace("℃", "°C")
+    t = re.sub(r"(\d)\s+(?=%|°C|°F|[a-zA-ZμÅ×])", r"\1", t)
+    t = re.sub(r"(\d)\s*[-–—]\s*(\d)", r"\1-\2", t)
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
+def measured_numbers(claim):
+    """Measured numbers in a claim: (normalised token, [digit parts]).
+
+    A token counts only if it carries a unit or %, is a decimal, is a
+    range, or is a bare integer >= 100 that is not a round multiple of
+    10 (a round "about 100" paraphrase is not checked here).
+    """
+    out = []
+    for m in NUM_TOKEN_RE.finditer(claim):
+        tok = m.group(0)
+        digits = DIGITS_RE.findall(tok)
+        if not digits:
+            continue
+        has_unit = bool(re.search(r"(?:" + UNITS + r")$", tok.strip()))
+        has_pct = "%" in tok
+        is_range = bool(re.search(r"\d\s*[-–—]\s*\d", tok))
+        is_decimal = any("." in d for d in digits)
+        bare_int = (len(digits) == 1 and "." not in digits[0]
+                    and not has_unit and not has_pct)
+        if bare_int:
+            try:
+                n = int(digits[0].replace(",", ""))
+            except ValueError:
+                continue
+            if n < 100 or n % 10 == 0:
+                continue
+        if not (has_unit or has_pct or is_range or is_decimal or bare_int):
+            continue
+        norm_tok = _norm(tok).replace(",", "")
+        parts = [d.replace(",", "") for d in digits]
+        out.append((norm_tok, parts))
+    return out
+
+
+def _number_in(norm_text, token, parts):
+    """True if the token, or all of its digit parts, occur in the text."""
+    if re.search(r"(?<!\d)" + re.escape(token) + r"(?!\d)", norm_text):
+        return True
+    return all(re.search(r"(?<!\d)" + re.escape(p) + r"(?!\d)", norm_text)
+               for p in parts)
 
 CARD_FIELDS = ["title", "research_question", "data", "methods",
                "key_findings", "limitations", "premises_for_conclusions"]
@@ -226,6 +304,52 @@ def main():
             check_anchor(kp["anchor"], where)
         if not kp.get("status"):
             errors.append(f"E6: {where} has no status")
+
+    # E11/W4: measured numbers must occur in the paper (E11, hard) and
+    # in the cited anchor paragraph (W4, warning). A number that appears
+    # nowhere in the extracted paper text is a fabrication.
+    para_text = {}
+    for s in seg["sections"]:
+        for p in s["paragraphs"]:
+            para_text[p["id"]] = p["text"]
+    full_paper_norm = _norm(" ".join(para_text.values()))
+
+    def check_numbers(where, text, anchor):
+        if not isinstance(text, str) or text.strip() in ("", NOT_REPORTED):
+            return
+        if not isinstance(anchor, dict) or not anchor.get("paragraph_id"):
+            return
+        pid = anchor["paragraph_id"]
+        para_norm = _norm(para_text.get(pid, ""))
+        for token, parts in measured_numbers(text):
+            if not _number_in(full_paper_norm, token, parts):
+                errors.append(f"E11 {where}: measured number {token!r} "
+                              f"occurs nowhere in the paper -- fix or drop "
+                              f"the claim")
+            elif not _number_in(para_norm, token, parts):
+                warnings.append(f"W4 {where}: measured number {token!r} "
+                                f"is not in the cited paragraph {pid} -- "
+                                f"name its source section in uncertain_items")
+
+    if isinstance(card, dict):
+        for field in CARD_FIELDS:
+            if field == "title":
+                continue
+            check_numbers(f"paper_card.{field}", card.get(field),
+                          anchors.get(field))
+    for sn in sn_list:
+        slot_anchors = sn.get("anchors", {})
+        for slot in SECTION_SLOTS:
+            check_numbers(f"section {sn.get('section_id')}.{slot}",
+                          sn.get(slot), slot_anchors.get(slot))
+        for ft in sn.get("figures_tables", []):
+            check_numbers(
+                f"section {sn.get('section_id')} "
+                f"figures_tables[{ft.get('item')!r}]",
+                ft.get("value_from_text"), ft.get("anchor"))
+    for i, kp in enumerate(notes.get("knowledge_points", [])):
+        check_numbers(f"knowledge_points[{i}]", kp.get("definition"),
+                      kp.get("anchor"))
 
     # W2: unreviewed extractive candidates copied verbatim into findings
     for sn in sn_list:
