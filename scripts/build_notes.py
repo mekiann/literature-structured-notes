@@ -21,7 +21,10 @@ write interpretive claims):
      contain a number, a percent, or a result cue word -- labelled
      "candidate" so the agent verifies each one against the paragraph
      before promoting it to a finding. Candidates are never presented as
-     findings by this script.
+     findings by this script. A second list, limitation_candidates (up
+     to 2 per section), holds sentences carrying a limitation cue
+     ("only", "limited", "however", "仅", "局限" ...) so the limitations
+     field can be filled from the paper instead of from plausibility.
   3b. Figure/table register: every Figure/Table mentioned in the
      section's paragraphs, with the paragraph(s) that mention it.
      Values are NOT extracted from the figure/table itself (a text
@@ -29,10 +32,12 @@ write interpretive claims):
      surrounding text states, with an anchor, or leaves it
      NOT_REPORTED. A finding that cites a figure without a value from
      the text is not a verified finding.
-  4. Term candidates: abbreviation definitions "Full Name (ABBR)" found in
-     the text, and repeated capitalised phrases; grouped under a canonical
-     term with variants, for the agent to confirm/merge per the dedup
-     rules in SKILL.md. Unconfirmed terms stay status="candidate".
+  4. Term candidates: abbreviation definitions "Full Name (ABBR)" and
+     "Full Name, also known as Short" / "hereafter Short" forms found in
+     the text, and repeated capitalised phrases (2+ occurrences);
+     grouped under a canonical term with variants, for the agent to
+     confirm/merge per the dedup rules in SKILL.md. Unconfirmed terms
+     stay status="candidate".
   5. Search index (index.json): every section, candidate term and anchor,
      so notes are retrievable by keyword without re-reading the paper.
 
@@ -51,11 +56,31 @@ from collections import Counter
 SENT_SPLIT = re.compile(r"(?<=[.!?。！？])\s+")
 ABBR_RE = re.compile(r"([A-Za-z][A-Za-z\-]+(?:\s+[a-z][A-Za-z\-]+){0,4})"
                       r"\s*\(([A-Z]{2,10})\)")
-NUM_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:%|percent|mg|g|mL|nm|°C|K|h|min|s\b)")
+# "X, also known as Y" / "X (hereafter Y)" definitions: the short form
+# after the marker is the abbreviation or short name for the full form.
+AKA_RE = re.compile(
+    r"([A-Za-z][A-Za-z\-]+(?:\s+[a-z][A-Za-z\-]+){0,4})\s*,?\s*"
+    r"(?:also known as|hereafter (?:referred to as)?|hereinafter)\s+"
+    r"([A-Za-z][A-Za-z\-]+(?:\s+[A-Za-z\-]+){0,3})", re.IGNORECASE)
+# Units a measured number may carry. A claim number counts as "measured"
+# only with one of these, a % sign, or as a decimal / large integer --
+# see validate_notes.py E11. Keep this list in sync with that script.
+UNITS = (r"%|percent|°C|°F|K\b|mg|μg|µg|ng|pg|g\b|kg\b|mL|μL|µL|L\b|"
+         r"nm|μm|µm|mm|cm|m\b|Å|mM|M\b|mol|mmol|μmol|Pa|kPa|MPa|GPa|"
+         r"eV|keV|Da|kDa|rpm|Hz|kHz|MHz|W\b|mW|kW|V\b|mV|A\b|mA|ppm|ppb|"
+         r"fold|wt%|at%|vol%|h\b|min|s\b|ms|d\b|wk|yr|mmHg|N\b|J\b|cal|"
+         r"mol/L|mg/mL|×|°")
+NUM_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:" + UNITS + ")")
 RESULT_CUES = re.compile(
     r"\b(show|shows|showed|demonstrat|increas|decreas|reduc|improv|significan|"
     r"achiev|obtain|found|reveal|conclude|表明|提高|降低|增加|减少|证明|发现|结果)\w*",
     re.IGNORECASE)
+# Limitation cues: sentences carrying one of these are candidates for the
+# paper-card limitations field, which generic result-cue scoring misses.
+LIMIT_CUES = re.compile(
+    r"\b(however|limited|limitation|only|not|fail|despite|although|"
+    r"although|remains unclear|further work|仅|局限|不足|然而|未|没有|"
+    r"但是|尽管|有待)\w*", re.IGNORECASE)
 CAP_PHRASE_RE = re.compile(r"\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b")
 
 
@@ -87,6 +112,31 @@ def candidates(paras, limit=3):
                               "before using as a finding"})
         if len(out) >= limit:
             break
+    return out
+
+
+def limitation_candidates(paras, limit=2):
+    """Sentences that may state a limitation of the study.
+
+    Result-cue scoring misses these (they carry no number and no result
+    verb), yet the paper-card limitations field must be filled from the
+    paper, not from plausibility. Candidates are pointers only -- the
+    agent verifies each one against its paragraph before promoting it.
+    """
+    out, seen = [], set()
+    for p in paras:
+        for s in split_sentences(p["text"]):
+            if s in seen:
+                continue
+            if LIMIT_CUES.search(s) and len(s) > 25:
+                seen.add(s)
+                out.append({"sentence": s, "paragraph_id": p["id"],
+                            "page": p["page"],
+                            "status": "candidate -- verify against the "
+                                      "paragraph before using as a "
+                                      "limitation"})
+                if len(out) >= limit:
+                    return out
     return out
 
 
@@ -127,6 +177,10 @@ def main():
                 # rejects all-caps fragments and heading debris.
                 if any(w and w[0].islower() for w in full.split()):
                     abbrs.setdefault(ab, set()).add(full)
+            for full, short in AKA_RE.findall(p["text"]):
+                full = re.sub(r"^(A|An|The)\s+", "", full.strip())
+                if any(w and w[0].islower() for w in full.split()):
+                    abbrs.setdefault(short, set()).add(full)
     full_text = " ".join(p["text"] for s in sections for p in s["paragraphs"])
     cap_counts = Counter(CAP_PHRASE_RE.findall(full_text))
     terms = []
@@ -135,7 +189,10 @@ def main():
                       "variants": sorted(fulls),
                       "status": "candidate -- confirm the definition in the text"})
     for phrase, n in cap_counts.most_common(20):
-        if n >= 3 and phrase not in [t["canonical"] for t in terms]:
+        # Two occurrences are enough to surface a real term (a method or
+        # material named in Methods and again in Results); one occurrence
+        # is usually a heading fragment or a one-off phrase.
+        if n >= 2 and phrase not in [t["canonical"] for t in terms]:
             terms.append({"canonical": phrase, "abbreviation": "NOT_REPORTED",
                           "variants": [phrase], "occurrences": n,
                           "status": "candidate -- confirm it is a real term, "
@@ -177,6 +234,7 @@ def main():
             "figures_tables": sorted(ft_register.values(),
                                      key=lambda e: e["item"]),
             "extractive_candidates": candidates(s["paragraphs"]),
+            "limitation_candidates": limitation_candidates(s["paragraphs"]),
         })
         index_entries.append({"kind": "section", "term": s["title"],
                               "note_id": s["id"], "anchor": anchor})
