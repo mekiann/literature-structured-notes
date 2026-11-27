@@ -8,8 +8,12 @@ What it does (deterministic, rule-based, stdlib only):
   1. Joins page texts in page order, splits into paragraphs (blank-line
      separated; also splits long single-line-wrapped blocks conservatively).
   2. Detects section headings in the paper's own wording, English and
-     Chinese, numbered ("1 Introduction", "3.2 Methods") and unnumbered
-     ("Abstract", "摘要", "Results and Discussion", "结论").
+     Chinese, numbered ("1 Introduction", "3.2 Methods", "2: Methods")
+     and unnumbered ("Abstract", "摘要", "Results and Discussion", "结论",
+     "Experimental Setup", "Data Availability Statement", "Future Work").
+     A trailing full stop on a short known heading ("Introduction.") is
+     tolerated; a body sentence such as "3.5 g of sample was added." is
+     not promoted to a heading.
      Headings are NEVER invented: a section exists only if a heading line
      is found. Text before the first heading goes to section "front-matter".
   3. Assigns every paragraph an id "<section-order>.<para-n>" and the page
@@ -43,18 +47,30 @@ import sys
 KNOWN = [
     "abstract", "摘要",
     "introduction", "引言", "绪论", "背景",
-    "related work", "相关工作", "文献综述",
+    "related works", "related work", "相关工作", "文献综述",
+    "background and motivation",
     "materials and methods", "methods", "methodology", "method",
     "材料与方法", "实验方法", "方法", "实验",
+    "experimental setup", "experimental section", "experimental",
+    "sample preparation", "materials", "material",
+    "characterization",
+    "statistical analysis", "research design", "research methods",
+    "study area", "case study", "theoretical analysis",
     "results and discussion", "results", "结果与讨论", "结果",
+    "experimental results", "numerical results",
     "discussion", "讨论",
     "conclusion", "conclusions", "concluding remarks",
     "结论", "总结", "展望",
+    "future work", "future perspectives",
     "limitations", "limitation", "局限性", "不足",
     "references", "参考文献",
     "acknowledgements", "acknowledgments", "致谢",
     "appendix", "附录",
-    "data availability", "数据可用性",
+    "supplementary information", "supporting information",
+    "data availability statement", "data availability", "数据可用性",
+    "author contributions", "funding", "ethics",
+    "competing interests", "conflict of interest",
+    "nomenclature", "abbreviations",
     "theory", "理论", "model", "模型",
 ]
 KNOWN_RE = re.compile(
@@ -62,7 +78,7 @@ KNOWN_RE = re.compile(
     r"(?:\s*[:：\-–—]\s*(.*))?$", re.IGNORECASE)
 
 NUMBERED_RE = re.compile(
-    r"^\s*(\d+(?:\.\d+)*)\.?\s+([A-Z\u4e00-\u9fff][^\n]{1,80})$")
+    r"^\s*(\d+(?:\.\d+)*)\.?[:]?\s+([A-Z\u4e00-\u9fff][^\n]{1,80})$")
 
 FIG_RE = re.compile(r"\b(?:Fig\.?|Figure)\s*(\d+[A-Za-z]?)", re.IGNORECASE)
 FIG_ZH_RE = re.compile(r"图\s*(\d+[A-Za-z]?)")
@@ -70,12 +86,8 @@ TAB_RE = re.compile(r"\bTable\s*(\d+[A-Za-z]?)", re.IGNORECASE)
 TAB_ZH_RE = re.compile(r"表\s*(\d+[A-Za-z]?)")
 
 
-def is_heading(line):
-    s = line.strip()
-    if not s or len(s) > 90:
-        return None
-    if s.endswith(".") and not re.match(r"^\s*\d", s):
-        return None  # ordinary sentence, not a heading
+def _match_heading(s):
+    """Match one candidate line against the known/numbered patterns."""
     m = KNOWN_RE.match(s)
     if m:
         title = (m.group(1) + (" " + m.group(2) if m.group(2) else "")).strip()
@@ -88,6 +100,26 @@ def is_heading(line):
         title = m.group(2).strip()
         if len(title.split()) <= 8 and not re.search(r"[.;。；]$", title):
             return f"{m.group(1)} {title}"
+    return None
+
+
+def is_heading(line):
+    s = line.strip()
+    if not s or len(s) > 90:
+        return None
+    if s.endswith(".") and not re.match(r"^\s*\d", s):
+        # Ordinary sentence, not a heading -- unless it is a short known
+        # heading with a trailing full stop ("Introduction.").
+        if len(s.split()) > 6:
+            return None
+    title = _match_heading(s)
+    if title is not None:
+        return title
+    if s.endswith(".") and len(s.split()) <= 8:
+        # Retry without the trailing stop: "1. Introduction." is a
+        # heading, but "3.5 g of sample was added." must stay body text --
+        # it only counts if the stripped line matches a known heading.
+        return _match_heading(s[:-1].rstrip())
     return None
 
 
