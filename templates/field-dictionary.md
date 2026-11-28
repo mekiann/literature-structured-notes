@@ -95,7 +95,7 @@ conditions from across the paper (e.g. `premises_for_conclusions`
 citing a temperature stated in Methods while anchored to Discussion)
 — but then the source section must be named in `uncertain_items`.
 
-## Cross-field consistency checks K1–K5 (script: check_consistency.py)
+## Cross-field consistency checks K1–K7 (script: check_consistency.py)
 
 The machine-checkable part of the claim audit, run as step 5b before
 validation. Exit 1 on any FAIL; the report is `result.json`
@@ -108,6 +108,26 @@ validation. Exit 1 on any FAIL; the report is `result.json`
 | K3 | A measured number in `key_findings` must also appear in some section note's `result`/`conclusion` | warn |
 | K4 | A `limitations` item whose anchor paragraph has no limitation cue word (`only`, `limited`, `not`, `however`, `仅`, `局限`, `不足`, `然而` ...) and is not in a Discussion/Conclusion/Limitations section may be invented from plausibility | warn |
 | K5 | A knowledge point's definition anchor paragraph must contain the canonical term (case-insensitive, hyphens ignored) | FAIL |
+| K6 | A headed section note (not front-matter / unsectioned) with all four content slots (`purpose`/`method`/`result`/`conclusion`) NOT_REPORTED was segmented but never read | warn |
+| K7 | A section `result`/`conclusion` naming a Figure/Table whose register entry is still NOT_REPORTED cites it for a value the citing text never states | warn |
+
+## E12 — anchor-content overlap (validator, hard check)
+
+A filled factual claim must share at least one content token (a Latin
+word of 4+ letters, excluding generic stopwords such as "paper",
+"study", "result") or one measured number with its anchor paragraph,
+or the validator fails the notes (E12). E11 proves a number exists
+*somewhere* in the paper; E12 proves the *anchor paragraph* states
+something like the claim — it catches a drifted paraphrase ("most" for
+"78%", a reversed comparison) and an anchor pasted onto the wrong
+paragraph, which E11 cannot see. Applies to the paper-card fields, the
+section `result`/`method` slots, figure/table values and knowledge-point
+definitions. `purpose`, `conclusion` and `link_to_next_section` are
+interpretive / structural handovers, not factual claims, so they are
+outside E12 (the claim audit and K2 cover them). A claim with no
+checkable Latin token and no measured number (e.g. a purely Chinese
+paraphrase) is outside E12; the claim audit above still has to re-read
+the paragraph.
 
 ## Knowledge-point dedup / merge rules
 
@@ -133,8 +153,10 @@ validation. Exit 1 on any FAIL; the report is `result.json`
 - Machine-checkable: section coverage (E4), anchor existence and page
   match (E8), field presence / non-emptiness (E2), dedup (E7),
   placeholder leftovers (E9), measured numbers occurring in the paper
-  (E11), findings-with-premises / link targets / term anchors (K1, K2,
-  K5) — all enforced by `validate_notes.py` and `check_consistency.py`.
+  (E11), anchor-content overlap for factual claims (E12),
+  findings-with-premises / link targets / term anchors (K1, K2, K5),
+  empty section notes and findings citing unresolved figures (K6, K7)
+  — all enforced by `validate_notes.py` and `check_consistency.py`.
 - Human-confirmed (agent must judge, validator cannot): whether an anchor
   points at the paragraph that *actually states* the claim (not just a
   paragraph in the same section); whether a number was copied with the
