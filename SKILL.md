@@ -137,6 +137,11 @@ This produces, mechanically and deterministically:
   limitation cue (`only`, `limited`, `however`, `仅`, `局限` ...) —
   pointers for the `limitations` field, which result-cue scoring
   misses; verify each one against its paragraph before promoting it;
+- **condition candidates**: up to 2 sentences per section carrying a
+  measured number with a unit — parameter values and measurement
+  conditions (temperatures, doses, durations, concentrations) that
+  the `methods` and `premises_for_conclusions` fields are filled
+  from; verify each one against its paragraph before promoting it;
 - **term candidates**: abbreviation definitions `Full Name (ABBR)`,
   `Full Name, also known as Short` / `hereafter Short` forms, and
   repeated capitalised phrases (2+ occurrences), grouped as canonical
@@ -163,7 +168,11 @@ For the paper card, follow `templates/field-dictionary.md`:
   `paper_card.field_anchors`.
 - `premises_for_conclusions` is mandatory to attempt: the sample scope,
   parameter range, assumptions and controls under which each conclusion
-  holds. A conclusion recorded without its premises must be flagged in
+  holds. Use the `condition_candidates` of the Methods/Results
+  sections (sentences carrying a measured number with a unit) as the
+  source list — a condition synthesised from another section must name
+  its source section in `uncertain_items` (validator W4). A conclusion
+  recorded without its premises must be flagged in
   `uncertain_items` as scope-limited.
 - Numbers keep the paper's units and sign; a number whose unit you
   cannot find is `NOT_REPORTED`, not a bare number. A measured number
@@ -227,12 +236,15 @@ python3 scripts/check_consistency.py --notes /app/work/notes.json \
   --sections /app/work/sections.json --out /app/work/consistency.json
 ```
 
-Checks K1–K5 (see `templates/field-dictionary.md`): findings without
+Checks K1–K7 (see `templates/field-dictionary.md`): findings without
 premises (K1, fail), a `link_to_next_section` naming the wrong next
 section (K2, fail), a `key_findings` number missing from every section
 result (K3, warn), a limitation with no traceable cue (K4, warn), a
 knowledge-point definition anchored to a paragraph that never names
-the term (K5, fail). Exit 1 = fix every `FAIL` line before continuing.
+the term (K5, fail), a headed section note left entirely NOT_REPORTED
+(K6, warn), and a result/conclusion citing a Figure/Table whose
+register entry is still NOT_REPORTED (K7, warn). Exit 1 = fix every
+`FAIL` line before continuing.
 Copy `consistency.json` into `result.json` as `consistency_record`.
 
 ### Step 6 — Verifiability scorecard
@@ -272,9 +284,14 @@ Exit 0 = pass (warnings are honest gaps, and must appear in
 `uncertain_items`). Exit 1 = fail: fix every `FAIL` line — missing
 anchors, empty fields, section-coverage mismatch, duplicate terms,
 anchors pointing at non-existent paragraphs/pages, leftover
-`TODO/TBD/XXX` placeholders, and **E11: a measured number that occurs
-nowhere in the paper**. W4 warns when a measured number is not in its
-cited paragraph — name the source section in `uncertain_items`.
+`TODO/TBD/XXX` placeholders, **E11: a measured number that occurs
+nowhere in the paper**, and **E12: a filled factual claim that shares
+no content token or number with its anchor paragraph** (the paragraph
+does not state the claim — fix the anchor or reword the claim; E12
+does not apply to the interpretive `purpose` / `conclusion` /
+`link_to_next_section` slots or to claims with no checkable token).
+W4 warns when a measured number is not in its cited paragraph — name
+the source section in `uncertain_items`.
 Re-run until it passes. **Never deliver notes that fail validation,
 and never weaken the validator to make them pass.**
 
@@ -288,14 +305,14 @@ Copy the validated files and write `result.json`:
   `notes.json` after filling; keep the two in sync).
 - `index.json` — search index (sections + terms + anchors).
 - `gain.json` — the verifiability scorecard from step 6.
-- `consistency.json` — the step-5 consistency report (K1–K5).
+- `consistency.json` — the step-5 consistency report (K1–K7).
 - `result.json` — `case_id`, `status` (`success` | `partial` |
   `unable-to-judge`, with a reason), `paper_card`,
   `section_notes`, `knowledge_points`, `sources` (paper filename,
   extraction tool actually used, extraction layout used, sections detected), `uncertain_items`,
   `gain_evidence` (the step-6 scorecard, plus a baseline scorecard if
   one was run), `audit_record` (step-5 audit outcome),
-  `consistency_record` (step-5 K1–K5 outcome),
+  `consistency_record` (step-5 K1–K7 outcome),
   and a `change_record` (what was filled, what stayed NOT_REPORTED,
   validator result). No output_contract fields were published in the
   challenge files for this task, so `result.json` carries the §3 fields
@@ -315,7 +332,7 @@ Copy the validated files and write `result.json`:
 | Word input | LibreOffice 24.2.7.2 (`soffice`, converts `.docx` to text) | — | status `partial`, missing tool named |
 | One PDF page fails to extract | per-page resilience in `extract_text.py` (other pages still extracted; failed page marked) | — | failed page in `uncertain_items`, status `partial` if key content may live there |
 | Section/term extraction, validation | Python 3.12 stdlib scripts in `scripts/` | — (no third-party libs needed) | — |
-| Cross-field consistency | `scripts/check_consistency.py` (K1–K5, stdlib) | — | audit falls back to the manual step-5 reading check; `consistency_record` records why |
+| Cross-field consistency | `scripts/check_consistency.py` (K1–K7, stdlib) | — | audit falls back to the manual step-5 reading check; `consistency_record` records why |
 | Verifiability scorecard | `scripts/measure_gain.py` (stdlib, `--baseline` delta) | — | scorecard skipped; `gain_evidence` records why |
 | Scanned-image PDF | `ocr-tool` (declared) | — | low-text warning, status `partial` |
 | Rendering previews | LibreOffice 24.2.7.2 | skip preview, note it | text/JSON outputs unaffected |
@@ -352,7 +369,7 @@ cite paragraph ids, not free text.
    `uncertain_items`, `gain_evidence`, `audit_record`,
    `consistency_record`, and `change_record`; `status` is honest
    (`partial` if anything is NOT_REPORTED).
-5. `check_consistency.py` exits 0 (K1–K5) on the final `notes.json`,
+5. `check_consistency.py` exits 0 (K1–K7) on the final `notes.json`,
    and every W4 warning is explained in `uncertain_items`.
 6. The public GitHub repo for this Skill is
    https://github.com/mekiann/literature-structured-notes and
