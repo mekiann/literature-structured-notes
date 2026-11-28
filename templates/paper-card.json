@@ -1,7 +1,7 @@
 {
  "$schema-note": "Paper-card JSON schema (documentation template, not a filled answer). Every field is either a value copied/checked against the cited paragraph, or the literal string NOT_REPORTED. Empty strings and null are never valid values.",
  "audit_record": "<step-5 claim-audit outcome: claims checked, corrected, dropped, conflicts kept>",
- "consistency_record": "<step-5b cross-field consistency outcome from check_consistency.py (K1-K5 failures and warnings)>",
+ "consistency_record": "<step-5b cross-field consistency outcome from check_consistency.py (K1-K7 failures and warnings)>",
  "case_id": "<string, from /input/case.json>",
  "gain_evidence": "<scorecard from measure_gain.py (section coverage, anchored-claim ratio, fill, figure/table resolution), plus a baseline scorecard if one was run>",
  "knowledge_points": [
@@ -83,6 +83,15 @@
     }
    },
    "conclusion": "<conclusion drawn in this section, or NOT_REPORTED>",
+   "condition_candidates": [
+    "<sentences carrying a measured number with a unit -- pointers for the methods / premises_for_conclusions fields; verify against the paragraph before use>"
+   ],
+   "extractive_candidates": [
+    "<sentences with a number / result cue -- pointers for findings; verify against the paragraph before use>"
+   ],
+   "limitation_candidates": [
+    "<sentences carrying a limitation cue -- pointers for the limitations field; verify against the paragraph before use>"
+   ],
    "figures_tables": [
     {
      "anchor": {
