@@ -1,5 +1,63 @@
 # Changelog — literature-structured-notes
 
+## v1.3 — 2026-11-29 (improvement resubmission, deadline day)
+
+Improvement over v1.2 (attempt 116476, scored 73.3333/100; leader
+84.33, gap 11.0) along the challenge's scoring dimensions. No
+official-case content is involved: all changes were verified on the
+builder's own invented SAMPLE paper only (see README "Local test —
+v1.3 re-run"), plus negative tests that prove the new checks fire.
+Workflow stays 8 steps (step 3 gains condition candidates, step 5b
+gains K6–K7, step 7 gains E12).
+
+- **Actual effect — E12 anchor-content overlap (new, hard fail).**
+  `validate_notes.py` gains check E12: a filled factual claim must
+  share at least one content token (a Latin word of 4+ letters, minus
+  generic stopwords) or one measured number with its anchor paragraph,
+  or validation fails. E11 proves a number exists *somewhere* in the
+  paper; E12 proves the *anchor paragraph* states something like the
+  claim — it catches a drifted paraphrase and a wrong-paragraph anchor
+  that E11 cannot see (proven: a drifted s5 result with no numbers
+  fails E12; an s4 result anchored to the front-matter label paragraph
+  fails E12). Applies to paper-card fields, section `result`/`method`
+  slots, figure/table values and knowledge-point definitions;
+  interpretive `purpose`/`conclusion`/`link_to_next_section` slots
+  and claims with no checkable token are outside it by design (the
+  step-5 audit covers them). Honest limit: E12 cannot catch an anchor
+  swapped to another paragraph of the same paper that shares the same
+  vocabulary — one shared token passes by design (documented in README
+  "Limits").
+- **Actual effect — condition candidates (new).** `build_notes.py`
+  adds a per-section `condition_candidates` list (up to 2 sentences
+  carrying a measured number with a unit: temperatures, doses,
+  durations, concentrations) — the parameter values the `methods` and
+  `premises_for_conclusions` fields are filled from, which result-cue
+  scoring misses because bare conditions carry no result verb. On the
+  SAMPLE paper it surfaces exactly the two Methods sentences the
+  `methods`/`premises` fields are filled from (80 °C / 30 min and
+  1% / 40 °C / 12 h). `templates/paper-card.json` documents the new
+  field; SKILL.md step 4 tells the agent to use it as the premises
+  source list.
+- **Actual effect — empty-section and unresolved-figure checks (new).**
+  `check_consistency.py` gains K6 (warn: a headed section note with
+  every content slot NOT_REPORTED was segmented but never read;
+  front-matter/unsectioned exempt) and K7 (warn: a section
+  result/conclusion naming a Figure/Table whose register entry is
+  still NOT_REPORTED cites it for a value the text never states).
+  Both proven with negative tests (K6/K7 warn, exit 0). On SAMPLE-001
+  both are silent (0 warnings), as every headed section is filled and
+  all three register entries are resolved.
+- **Use gain — filled values unchanged, gain is verification.**
+  The v1.3 scorecard on SAMPLE-001 is identical to v1.2 (7/7 sections,
+  anchored-claim ratio 0.963, 3/3 figures/tables resolved, 15
+  NOT_REPORTED, 0 unreviewed candidates) — reported honestly rather
+  than inflated. No `--baseline` delta is claimed for v1.3: the v1.2
+  filled-notes file was lost in a VM restart, so no real v1.2 baseline
+  file exists to compare against.
+- `templates/field-dictionary.md` documents E12 and K6–K7;
+  `templates/paper-card.json` documents `condition_candidates` and
+  K1–K7; `SKILL.md` step 3/4/5b/7 and self-check updated accordingly.
+
 ## v1.2 — 2026-11-28 (improvement resubmission)
 
 Improvement over v1.1 (attempt 114388, scored 73.3333/100) along the
