@@ -96,6 +96,24 @@ anchored-claim ratio 0.963, knowledge points 1/1 verified,
 figure/table register 3/3 resolved, 15 NOT_REPORTED remaining,
 0 unreviewed candidates.
 
+## Validation — v1.3 re-run (2026-11-29)
+
+Same filled values, re-run through the v1.3 scripts (see README
+"Local test — v1.3 re-run"): `check_consistency.py` **PASS, exit 0**
+(0 failures, 0 warnings — K1–K7); `validate_notes.py` **PASS, exit 0**
+(0 errors, 16 warnings — the same 15 NOT_REPORTED slots plus the same
+one W4 as v1.2); `measure_gain.py`: same scorecard as v1.2 (section
+coverage 7/7 in order, paper card 7/7 filled, 20 section slots filled,
+anchored-claim ratio 0.963, knowledge points 1/1 verified, figure/table
+register 3/3 resolved, 15 NOT_REPORTED remaining, 0 unreviewed
+candidates). New in v1.3: the skeleton also carries
+`condition_candidates` (Methods s3: the 80 °C / 30 min sentence and
+the 1% / 40 °C / 12 h sentence — the two sentences the `methods` and
+`premises_for_conclusions` fields are filled from). Negative tests:
+E12 fires on a wrong-paragraph anchor and on a drifted claim; K6
+warns on an entirely NOT_REPORTED section; K7 warns when a cited
+figure's register entry is unresolved.
+
 ## Validation — v1.2 re-run (2026-11-28)
 
 Same filled values, re-run through the v1.2 scripts (see README
