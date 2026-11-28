@@ -4,7 +4,7 @@ Skill: `literature-structured-notes` (`SKILL.md`). Challenge:
 product-arena-06-6d8cf72b — 文献总结与结构化笔记. Scoring: human review
 only. Public repo: https://github.com/mekiann/literature-structured-notes
 (`GITHUB_URL.txt` in the submission root, second line `SKILL.md`).
-Version: v1.2 (see `CHANGELOG.md`).
+Version: v1.3 (see `CHANGELOG.md`).
 
 ## What it does
 
@@ -27,10 +27,11 @@ notes:
    silently. Figure/table values come from the citing text, never from
    the label.
 5. **Audit and consistency-check** (audit new in v1.1, consistency check
-   new in v1.2): re-read each cited paragraph, check number/unit/sign
-   and cross-field consistency (finding ↔ premises, limitation ↔
-   method/data), and record the outcome in `audit_record`; then run
-   `scripts/check_consistency.py` (K1–K5) and record its report as
+   new in v1.2, K6–K7 new in v1.3): re-read each cited paragraph, check
+   number/unit/sign and cross-field consistency (finding ↔ premises,
+   limitation ↔ method/data), and record the outcome in `audit_record`;
+   then run
+   `scripts/check_consistency.py` (K1–K7) and record its report as
    `consistency_record`.
 6. **Measure the scorecard** (`scripts/measure_gain.py` → `gain.json`,
    with an optional `--baseline` delta against a real run of the same
@@ -38,9 +39,10 @@ notes:
 7. **Validate** (`scripts/validate_notes.py`): rejects empty fields,
    unanchored filled claims, section-coverage mismatch, duplicate terms,
    anchors pointing at non-existent paragraphs/pages, figure/table
-   register errors (E10), and measured numbers that occur nowhere in
-   the paper (E11); warns (W4) when a number is not in its cited
-   paragraph.
+   register errors (E10), measured numbers that occur nowhere in
+   the paper (E11), and filled factual claims that share no content
+   token or number with their anchor paragraph (E12, new in v1.3);
+   warns (W4) when a number is not in its cited paragraph.
 8. **Deliver** to `/app/output`: `notes.json`, `notes.md`, `index.json`,
    `gain.json`, `consistency.json`, `result.json` (with `case_id`,
    `status`, `sources`, `uncertain_items`, `gain_evidence`,
@@ -79,7 +81,7 @@ python3 scripts/build_notes.py --sections /app/work/sections.json \
 #    citing text.
 
 # 5. Audit (re-read each cited paragraph; check numbers, units, signs and
-#    cross-field consistency) and consistency check (K1-K5)
+#    cross-field consistency) and consistency check (K1-K7)
 python3 scripts/check_consistency.py --notes /app/work/notes.json \
   --sections /app/work/sections.json --out /app/work/consistency.json
 
@@ -130,12 +132,12 @@ same input → same skeleton and same validation result.
 |---|---|
 | `SKILL.md` | Skill本体: frontmatter, when-to-use, 8-step workflow, fallbacks, failure handling, self-check |
 | `README.md` | This usage/method doc |
-| `CHANGELOG.md` | Version history (v1.0 → v1.1 → v1.2 changes) |
+| `CHANGELOG.md` | Version history (v1.0 → v1.1 → v1.2 → v1.3 changes) |
 | `scripts/extract_text.py` | Page-aware text extraction (PDF via pdftotext; .docx via LibreOffice; `--layout raw` two-column fallback; one failed page no longer aborts the run) |
 | `scripts/segment.py` | Heading detection (EN+ZH, numbered/unnumbered, more heading types, trailing-stop tolerance), paragraph ids + pages, figure/table mentions, two-column suspicion warning |
-| `scripts/build_notes.py` | Notes skeleton, paper card, extractive + limitation + term candidates, figure/table register, search index |
-| `scripts/check_consistency.py` | Cross-field consistency checks K1–K5 → `consistency.json` (new in v1.2) |
-| `scripts/validate_notes.py` | 11 error checks (E1–E11) + 4 warnings (W1–W4) on notes.json |
+| `scripts/build_notes.py` | Notes skeleton, paper card, extractive + limitation + condition + term candidates, figure/table register, search index (condition candidates new in v1.3) |
+| `scripts/check_consistency.py` | Cross-field consistency checks K1–K7 → `consistency.json` (K6–K7 new in v1.3) |
+| `scripts/validate_notes.py` | 12 error checks (E1–E12) + 4 warnings (W1–W4) on notes.json (E12 new in v1.3) |
 | `scripts/measure_gain.py` | Verifiability scorecard → `gain.json` (coverage, anchored-claim ratio, fill, figure/table resolution; `--baseline` delta in v1.2) |
 | `templates/paper-card.json` | JSON schema for notes.json / result.json (template, not an answer) |
 | `templates/field-dictionary.md` | Field definitions, anchor format, dedup/merge rules, machine-vs-human checks |
@@ -269,6 +271,64 @@ Other v1.2 tests (all run on this VM):
   3-page PDF, extraction returned 0, kept pages 1 and 3, and marked
   page 2 `extraction_failed: true`.
 
+## Local test — v1.3 re-run (2026-11-29, this VM)
+
+The same SAMPLE paper (recreated from `examples/example-notes.md`,
+same content, same case id SAMPLE-001; PDF rebuilt with LibreOffice
+from the sample text) was re-run through the v1.3 scripts:
+
+```bash
+cd /tmp/litnotes-test-v13
+python3 <skill>/scripts/extract_text.py --input sample-paper.pdf \
+  --out-text paper.txt --out-pages pages.json
+python3 <skill>/scripts/segment.py --pages pages.json --out sections.json
+python3 <skill>/scripts/build_notes.py --sections sections.json \
+  --case-id SAMPLE-001 --out-json notes.json --out-md notes.md \
+  --out-index index.json
+# fill the skeleton from the sample text (same values as example-notes.md)
+python3 <skill>/scripts/check_consistency.py --notes notes.json \
+  --sections sections.json --out consistency.json
+python3 <skill>/scripts/measure_gain.py --notes notes.json \
+  --sections sections.json --out gain.json
+python3 <skill>/scripts/validate_notes.py --notes notes.json \
+  --sections sections.json
+```
+
+Outcome: extraction 1 page, 1,992 chars (the rebuilt sample text is
+slightly longer than the v1.2 rebuild — the Abstract now repeats the
+Methods conditions, as in the current example-notes.md); segmentation
+found the same 6 headed sections in order; the skeleton now also
+carries `condition_candidates` (Methods s3: "Starch (5 g) in water
+(100 mL) was heated to 80 °C for 30 min." and "Crosslinker 1% by
+weight was added, the mixture was cast into moulds and dried at
+40 °C for 12 h." — the two sentences the `methods` and
+`premises_for_conclusions` fields are filled from); the filled notes
+pass `check_consistency.py` (0 failures, 0 warnings — K1–K7) and
+validation (exit 0, 0 errors, 16 warnings — the same 15 honest
+NOT_REPORTED slots plus the same one W4 as v1.2); `measure_gain.py`
+reports the same scorecard as v1.2 (section coverage 7/7 in order,
+paper card 7/7 filled, 20 section slots filled, anchored-claim ratio
+0.963, knowledge points 1/1 verified, figure/table register 3/3
+resolved, 15 NOT_REPORTED remaining, 0 unreviewed candidates). The
+filled values are unchanged from v1.2, so the v1.3 gain is in stricter
+verification (E12, K6, K7, condition candidates), not in the sample
+score — reported honestly rather than inflated. No `--baseline` delta
+is claimed for v1.3: the v1.2 filled-notes file was lost in a VM
+restart, so no real v1.2 baseline file exists to compare against.
+
+Negative tests (all run, all behave as designed):
+- E12: anchoring the s4 result to the front-matter label paragraph
+  s0.p2 fails validation (exit 1, `E12 ... shares no content token or
+  number with its anchor paragraph`).
+- E12: rewriting the s5 result to a drifted claim ("The catalyst bed
+  retained activity after regeneration.") fails validation (exit 1,
+  E12) — the paragraph never states it, and no measured number is
+  involved, so E11 could not have caught it.
+- K6: leaving the Introduction (s2) entirely NOT_REPORTED warns
+  (exit 0, 1 warning).
+- K7: leaving the Figure 2 register entry NOT_REPORTED while the s4
+  result still cites Figure 2 warns (exit 0, 1 warning).
+
 ## Limits (honest)
 
 - Heading detection is rule-based: papers with no recognisable headings
@@ -289,10 +349,19 @@ Other v1.2 tests (all run on this VM):
   findings — the validator enforces the anchor, and E11 enforces that
   every measured number occurs in the paper, but whether an anchor's
   *target* paragraph really states the claim is a human/agent
-  judgement, enforced by the step-5 claim audit and the K1–K5
-  consistency check and listed as such in the field dictionary.
+  judgement, enforced by the step-5 claim audit, the K1–K7
+  consistency check and the E12 anchor-content check, and listed as
+  such in the field dictionary.
   E11 deliberately does not check round paraphrases ("about 100" for
   102) or bare integers below 100 — those stay the audit's job.
+- E12 (new in v1.3) catches a factual claim anchored to a paragraph
+  that states nothing like it, but it cannot catch an anchor swapped
+  to another paragraph of the same paper that shares the same
+  vocabulary (e.g. a Results claim anchored to Methods, where words
+  like "release" and "crosslinker" appear in both) — a single shared
+  token is enough to pass, by design, so that honest paraphrases are
+  not rejected. The step-5 claim audit (re-reading the paragraph)
+  remains the check for that case.
 - No `output_contract` fields were published in the challenge files, so
   `result.json` carries the §3 fields (input id, main result,
   evidence/anchors, status, uncertainty); if a case's `task.md` names
