@@ -29,6 +29,14 @@ with a named check instead of slipping into the delivered notes:
   K5  FAIL: a knowledge point's definition anchor paragraph does not
       contain the canonical term (case-insensitive, hyphens ignored) --
       the definition is anchored to a paragraph that never names it.
+  K6  WARN: a headed section note (not front-matter / unsectioned) has
+      all four content slots (purpose/method/result/conclusion)
+      NOT_REPORTED -- the section was segmented but never read; either
+      fill it or record why it is empty in uncertain_items.
+  K7  WARN: a section result/conclusion names a Figure/Table whose
+      register entry is still NOT_REPORTED -- the finding cites a
+      figure/table for a value the citing text never states (see
+      templates/field-dictionary.md).
 
 Exit 0 = no failures (warnings are reported, not hidden); exit 1 = at
 least one FAIL. The JSON report is copied into result.json as
@@ -203,9 +211,46 @@ def main():
                 f"anchor paragraph {a['paragraph_id']} -- the definition "
                 f"is anchored to a paragraph that never names it")
 
+    # K6: a headed section note with every content slot NOT_REPORTED
+    # was segmented but never read. Front-matter / unsectioned sections
+    # are not paper content, so they are exempt.
+    for sn in sn_list:
+        title = (sn.get("section_title") or "").strip().lower()
+        if title in ("front-matter", "unsectioned"):
+            continue
+        if not any(is_filled(sn.get(slot)) for slot in
+                   ("purpose", "method", "result", "conclusion")):
+            warnings.append(
+                f"K6: section {sn.get('section_id')} "
+                f"({sn.get('section_title')!r}) has every content slot "
+                f"NOT_REPORTED -- the section was segmented but never "
+                f"read; fill it or record why it is empty in "
+                f"uncertain_items")
+
+    # K7: a result/conclusion naming a Figure/Table whose register entry
+    # is still NOT_REPORTED cites it for a value the text never states.
+    FT_RE = re.compile(r"(figure|table|图|表)\s*(\d+)", re.IGNORECASE)
+    for sn in sn_list:
+        unresolved = {ft.get("item", "").lower()
+                      for ft in sn.get("figures_tables", [])
+                      if not is_filled(ft.get("value_from_text"))}
+        if not unresolved:
+            continue
+        for slot in ("result", "conclusion"):
+            text = sn.get(slot) or ""
+            if not is_filled(text):
+                continue
+            for kind, num in FT_RE.findall(text):
+                item = f"{kind.capitalize()} {num}"
+                if item.lower() in unresolved:
+                    warnings.append(
+                        f"K7: section {sn.get('section_id')}.{slot} cites "
+                        f"{item} but its register entry is NOT_REPORTED "
+                        f"-- the citing text states no value for it")
+
     report = {"case_id": notes.get("case_id"),
               "failures": failures, "warnings": warnings,
-              "checks_run": ["K1", "K2", "K3", "K4", "K5"],
+              "checks_run": ["K1", "K2", "K3", "K4", "K5", "K6", "K7"],
               "result": "FAIL" if failures else "PASS"}
     print(f"check_consistency: {len(failures)} failure(s), "
           f"{len(warnings)} warning(s)")
