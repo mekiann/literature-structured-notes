@@ -25,6 +25,11 @@ write interpretive claims):
      to 2 per section), holds sentences carrying a limitation cue
      ("only", "limited", "however", "仅", "局限" ...) so the limitations
      field can be filled from the paper instead of from plausibility.
+     A third list, condition_candidates (up to 2 per section), holds
+     sentences carrying a measured number with a unit -- the parameter
+     values and measurement conditions the `methods` and
+     `premises_for_conclusions` fields are filled from, which a
+     result-cue scan misses.
   3b. Figure/table register: every Figure/Table mentioned in the
      section's paragraphs, with the paragraph(s) that mention it.
      Values are NOT extracted from the figure/table itself (a text
@@ -140,6 +145,36 @@ def limitation_candidates(paras, limit=2):
     return out
 
 
+def condition_candidates(paras, limit=2):
+    """Sentences carrying a measured number with a unit -- parameter
+    values and measurement conditions (temperatures, doses, durations,
+    concentrations) that the paper-card `methods` and
+    `premises_for_conclusions` fields must be filled from.
+
+    Premises are the field generic summaries drop most often, and a
+    result-cue scan misses bare conditions ("heated to 80 °C for
+    30 min") because they carry no result verb. Candidates are pointers
+    only -- the agent verifies each one against its paragraph before
+    promoting it, and a condition synthesised from another section must
+    name its source section in uncertain_items (validator W4).
+    """
+    out, seen = [], set()
+    for p in paras:
+        for s in split_sentences(p["text"]):
+            if s in seen:
+                continue
+            if NUM_RE.search(s) and len(s) > 20:
+                seen.add(s)
+                out.append({"sentence": s, "paragraph_id": p["id"],
+                            "page": p["page"],
+                            "status": "candidate -- verify against the "
+                                      "paragraph before using as a method "
+                                      "condition or premise"})
+                if len(out) >= limit:
+                    return out
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sections", required=True)
@@ -235,6 +270,7 @@ def main():
                                      key=lambda e: e["item"]),
             "extractive_candidates": candidates(s["paragraphs"]),
             "limitation_candidates": limitation_candidates(s["paragraphs"]),
+            "condition_candidates": condition_candidates(s["paragraphs"]),
         })
         index_entries.append({"kind": "section", "term": s["title"],
                               "note_id": s["id"], "anchor": anchor})
@@ -291,6 +327,12 @@ def main():
             if sn["extractive_candidates"]:
                 f.write("- Extractive candidates (verify before use):\n")
                 for c in sn["extractive_candidates"]:
+                    f.write(f"  - \"{c['sentence']}\" "
+                            f"[{c['paragraph_id']}, p.{c['page']}]\n")
+            if sn["condition_candidates"]:
+                f.write("- Condition candidates (method conditions / "
+                        "premises -- verify before use):\n")
+                for c in sn["condition_candidates"]:
                     f.write(f"  - \"{c['sentence']}\" "
                             f"[{c['paragraph_id']}, p.{c['page']}]\n")
             if sn["figures_tables"]:
