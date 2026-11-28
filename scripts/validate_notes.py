@@ -37,6 +37,20 @@ Checks (exit 0 = pass, 1 = fail; warnings never pass a failed check):
       paper is a fabrication -- fix or drop the claim. Round paraphrases
       ("about 100" for 102) are outside this check by design; the claim
       audit (SKILL.md step 5) still has to re-read the paragraph.
+ E12  Anchor-content overlap: a filled FACTUAL claim whose anchor
+      paragraph shares NO content token (a word of 4+ letters, or a
+      measured number) with the claim text is anchored to a paragraph
+      that does not state it -- a drifted paraphrase or a wrong
+      paragraph, not a verified claim. Fix the anchor or reword the
+      claim. Applies to the paper-card fields, the section `result` /
+      `method` slots, figure/table values and knowledge-point
+      definitions. `purpose`, `conclusion` and `link_to_next_section`
+      are interpretive / structural handovers, not factual claims, so
+      they are outside E12 (the step-5 audit and K2 cover them).
+      Claims with no checkable Latin token and no measured number
+      (e.g. a purely Chinese paraphrase) are outside this check by
+      design; the step-5 claim audit still has to re-read the
+      paragraph.
 
 Warnings (do not fail, but must be listed in uncertain_items):
   W1  Any field still NOT_REPORTED.
@@ -129,6 +143,25 @@ SECTION_SLOTS = ["purpose", "method", "result", "conclusion",
                  "link_to_next_section"]
 PLACEHOLDERS = ("TODO", "TBD", "XXX", "[?]", "???")
 NOT_REPORTED = "NOT_REPORTED"
+# Words too generic to prove an anchor paragraph states a claim.
+STOPWORDS = frozenset("""
+about above after again along among another around because before behind
+being below between both during either every first found from further
+given however into itself known later mainly means might more most much
+never often other paper report result results section shows shown since
+study such than their them then there these thing think those through
+under until using value values were what when where which while with
+within without would could should study paper based using used also
+""".split())
+TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z\-]{3,}")
+
+
+def content_tokens(text):
+    """Checkable content words of a claim: Latin words of 4+ letters,
+    minus generic stopwords. A claim with no such token (e.g. purely
+    Chinese text) yields an empty set and is outside the E12 check."""
+    return {t.lower() for t in TOKEN_RE.findall(text or "")
+            if t.lower() not in STOPWORDS}
 
 
 def main():
@@ -349,6 +382,49 @@ def main():
                 ft.get("value_from_text"), ft.get("anchor"))
     for i, kp in enumerate(notes.get("knowledge_points", [])):
         check_numbers(f"knowledge_points[{i}]", kp.get("definition"),
+                      kp.get("anchor"))
+
+    # E12: anchor-content overlap (factual claims only -- purpose,
+    # conclusion and link_to_next_section are interpretive handovers
+    # and are outside this check; see the header docstring).
+    def check_overlap(where, text, anchor):
+        if not isinstance(text, str) or text.strip() in ("", NOT_REPORTED):
+            return
+        if not isinstance(anchor, dict) or not anchor.get("paragraph_id"):
+            return
+        pid = anchor["paragraph_id"]
+        claim_tokens = content_tokens(text)
+        claim_numbers = {p for _, parts in measured_numbers(text)
+                         for p in parts}
+        if not claim_tokens and not claim_numbers:
+            return
+        para = para_text.get(pid, "")
+        para_tokens = content_tokens(para)
+        para_numbers = {d for d in DIGITS_RE.findall(_norm(para))}
+        if not (claim_tokens & para_tokens) and not (claim_numbers & para_numbers):
+            errors.append(f"E12 {where}: filled claim shares no content "
+                          f"token or number with its anchor paragraph "
+                          f"{pid} -- the paragraph does not state this "
+                          f"claim; fix the anchor or reword the claim")
+
+    if isinstance(card, dict):
+        for field in CARD_FIELDS:
+            if field == "title":
+                continue
+            check_overlap(f"paper_card.{field}", card.get(field),
+                          anchors.get(field))
+    for sn in sn_list:
+        slot_anchors = sn.get("anchors", {})
+        for slot in ("result", "method"):
+            check_overlap(f"section {sn.get('section_id')}.{slot}",
+                          sn.get(slot), slot_anchors.get(slot))
+        for ft in sn.get("figures_tables", []):
+            check_overlap(
+                f"section {sn.get('section_id')} "
+                f"figures_tables[{ft.get('item')!r}]",
+                ft.get("value_from_text"), ft.get("anchor"))
+    for i, kp in enumerate(notes.get("knowledge_points", [])):
+        check_overlap(f"knowledge_points[{i}]", kp.get("definition"),
                       kp.get("anchor"))
 
     # W2: unreviewed extractive candidates copied verbatim into findings
